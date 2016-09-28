@@ -1,29 +1,4 @@
-#include <core/core.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <limits.h>
-#include <serialize.h>
-#include <fcntl.h>
-#include <stdlib.h>
-
-// 3rd copy in the tree :/, not particularily robust
-static inline double parse_float(char *b, int len)
-{
-    boolean fractional = false;
-    double rez = 0;
-    int start = 0;
-    double fact = (*b=='-')?(b++, len--,-1.0):1.0;
-
-    for (; len > 0 ; b++, len --) {
-        if (*b == '.'){
-            fractional = true;
-        } else {
-            if (fractional) fact /= 10.0f;
-            rez = rez * 10.0f + (double)digit_of(*b);
-        }
-    }
-    return rez * fact;
-}
+#include <unix_internal.h>
 
 static char hex_digit[]={'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 static inline void bwrite(byte x)

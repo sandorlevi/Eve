@@ -43,6 +43,29 @@ value lookupv(edb b, uuid e, estring a)
     return(0);
 }
 
+static vector lookup_vector_internal(vector dest, edb b, uuid e, estring a)
+{
+    table al = value_table_find(b->eav, e);
+    if(al) {
+        table vl = value_table_find(al, a);
+        if(vl)
+            table_foreach(vl, v, terminal)
+                if(((leaf)terminal)->m != 0)
+                    vector_insert(dest, v);
+    }
+
+    vector_foreach(b->includes, i) {
+        lookup_vector_internal(dest, i, e, a);
+    }
+}
+
+vector lookup_vector(heap h, edb b, uuid e, estring a)
+{
+    vector dest = allocate_vector(h, 10);
+    lookup_vector_internal(dest, b, e, a);
+    return dest;
+}
+
 int edb_size(edb b)
 {
     return b->count;

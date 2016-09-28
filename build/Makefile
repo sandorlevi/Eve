@@ -6,6 +6,8 @@ LIBLUAJIT = $(LUAJIT_INSTALL)/lib/libluajit-5.1.a
 LUAJIT_INCLUDES = $(LUAJIT_INSTALL)/include/luajit-2.1
 BUILD = $(CURDIR)
 
+CC = cc -std=c99
+
 #find a better way to do this
 .SECONDARY: ../build/client.js ../build/editor.js ../build/renderer.js ../build/util.js
 
@@ -65,16 +67,16 @@ luajit-2.0:
 	(cd luajit-2.0 ; git checkout v2.1.0-beta2 ; make PREFIX=$(BUILD)/lua; make install PREFIX=$(BUILD)/lua)
 
 contgen: contgen.c
-	cc $< -g -o $@
+	$(CC) $< -g -o $@
 
 continuation_templates.h: contgen
 	contgen 10 10 > continuation_templates.h
 
 lutf8lib.o: lutf8lib.c
-	cc -std=c99 -c -g -I$(LUAJIT_INCLUDES) $^
+	$(CC) -c -g -I$(LUAJIT_INCLUDES) $^
 
 bundle.o: bundle.c
-	cc -std=c99 -c -g -I$(LUAJIT_INCLUDES) $^
+	$(CC) -c -g -I$(LUAJIT_INCLUDES) $^
 
 
 %.js: $(BUILD)/../jssrc/%.ts
@@ -84,16 +86,16 @@ path.c: Makefile
 	echo 'char *pathroot = "$(BUILD)/../";' > path.c
 
 package: package.o path.o
-	cc $^ -o $@
+	$(CC) $^ -o $@
 
 staticdb: $(DB_INCLUDES) package $(CONTENT) manifest
 	package < manifest > staticdb
 
 staticdb.o: staticdb
-	cc wrap.S -DSTART=$(S)db_start -DEND=$(S)db_end -DFILE='"$<"' -c -o $@
+	$(CC) wrap.S -DSTART=$(S)db_start -DEND=$(S)db_end -DFILE='"$<"' -c -o $@
 
 %.o: %.c continuation_templates.h $(UNIX_H) $(CORE_H) $(RUNTIME_H) $(HTTP_H)
-	cc -std=gnu99 -I../csrc/unix -I../csrc/core -I../csrc -I. $(INCLUDES) -I$(LUAJIT_INCLUDES) $(CFLAGS) -c $<
+	$(CC) -std=gnu99 -I../csrc/unix -I../csrc/core -I../csrc -I. $(INCLUDES) -I$(LUAJIT_INCLUDES) $(CFLAGS) -c $<
 
 %.o: %.lua $(LUAJIT)
 	$(LUAJIT) -b -g $< $@
@@ -104,7 +106,7 @@ staticdb.o: staticdb
 #macosx
 #linux  -Wl,-E
 eve: $(CORE) $(UNIX) $(COMPILER) $(UTF) $(LUAPOWER) $(HTTP) $(RUNTIME) $(DNS) staticdb.o eve.o
-	cc $^ $(LIBLUAJIT) $(LINK) -lm -ldl  -o $@
+	$(CC) $^ $(LIBLUAJIT) $(LINK) -lm -ldl  -o $@
 
 clean:
 	rm -f *.o eve continuation_templates.h *.js *.js.map db

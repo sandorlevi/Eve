@@ -21,11 +21,10 @@ static vector uuid_set(block bk, vector scopes)
 }
 
 
-static CONTINUATION_8_5(scan_listener,
-                        execf, heap, operator, value *, perf,
-                        value, value, value,
+static CONTINUATION_7_5(scan_listener,
+                        execf, heap, value *, perf, value, value, value,
                         value, value, value, multiplicity, uuid);
-static void scan_listener(execf n, heap h, operator op, value *r, perf p,
+static void scan_listener(execf n, heap h, value *r, perf p,
                           value er, value ar, value vr,
                           value e, value a, value v, multiplicity m, uuid block_id)
 {
@@ -33,53 +32,49 @@ static void scan_listener(execf n, heap h, operator op, value *r, perf p,
         store(r, er, e);
         store(r, ar, a);
         store(r, vr, v);
-        apply(n, h, p, op, r);
+        apply(n, h, p, r);
     }
 }
 
 #define sigbit(__sig, __p, __r) ((sig&(1<<__p))? register_ignore: __r)
 
-static CONTINUATION_8_4(do_scan, block, perf, execf,
+static CONTINUATION_8_3(do_scan, block, perf, execf,
                         vector, int, value, value, value,
-                        heap, perf, operator, value *);
+                        heap, perf, value *);
 static void do_scan(block bk, perf p, execf n,
                     vector scopes, int sig, value e, value a, value v,
-                    heap h, perf pp, operator op, value *r)
+                    heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if ((op == op_flush) || (op == op_close)) {
-        apply(n, h, p, op, r);
-        stop_perf(p, pp);
-        return;
-    }
+    start_perf(p);
 
     merge_scan(bk->ev, scopes, sig,
-               cont(h, scan_listener, n, h, op, r, p,
+               cont(h, scan_listener, n, h, r, p,
                     sigbit(sig, 2, e), sigbit(sig, 1, a), sigbit(sig, 0, v)),
                lookup(r, e), lookup(r, a), lookup(r, v));
+
     stop_perf(p, pp);
 }
 
 static inline boolean is_cap(unsigned char x) {return (x >= 'A') && (x <= 'Z');}
 
-static execf build_scan(block bk, node n)
+static execf build_scan(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    estring description = table_find(n->arguments, sym(sig));
+    estring description = blookupv(b, n, sym(sig));
     int sig = 0;
     for (int i=0; i< 3; i++) {
         sig <<= 1;
         sig |= is_cap(description->body[i]);
     }
-    vector name_scopes = table_find(n->arguments, sym(scopes));
+    vector name_scopes = blookup_vector(bk->h, b, n, sym(scopes));
 
-    return cont(bk->h, do_scan, bk,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_scan_scopes,
-                sig,
-                table_find(n->arguments, sym(e)),
-                table_find(n->arguments, sym(a)),
-                table_find(n->arguments, sym(v)));
+    *e = cont(bk->h, do_scan, bk,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_scan_scopes,
+              sig,
+              blookupv(b, n, sym(e)),
+              blookupv(b, n, sym(a)),
+              blookupv(b, n, sym(v)));
 }
 
 
@@ -95,28 +90,28 @@ typedef struct insert  {
     boolean is_t;
 } *insert;
 
-static CONTINUATION_1_4(do_insert, insert, heap, perf, operator, value *);
+static CONTINUATION_1_3(do_insert, insert, heap, perf, value *);
 
 static void do_insert(insert ins,
-                      heap h, perf pp, operator op, value *r)
+                      heap h, perf pp, value *r)
 {
-    start_perf(ins->p, op);
+    start_perf(ins->p);
 
-    if (op == op_insert) {
-        vector_foreach(ins->scopes, u)
-            multibag_insert(ins->target, *ins->h, u,
-                            lookup(r, ins->e), lookup(r, ins->a), lookup(r, ins->v),
-                            ins->deltam, ins->bk->name);
-    }
+    vector_foreach(ins->scopes, u)
+        multibag_insert(ins->target, *ins->h, u,
+                        lookup(r, ins->e), 
+                        lookup(r, ins->a),
+                        lookup(r, ins->v),
+                        ins->deltam, ins->bk->name);
 
-    apply(ins->n, h, ins->p, op, r);
+    apply(ins->n, h, ins->p, r);
     stop_perf(ins->p, pp);
 }
 
 
-static execf build_mutation(block bk, node n, int deltam)
+static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int deltam)
 {
-    value mt = table_find(n->arguments, sym(mutateType));
+    value mt = blookupv(b, n, sym(mutateType));
     insert ins = allocate(bk->h, sizeof(struct insert));
 
     if (mt == sym(bind)) {
@@ -131,30 +126,28 @@ static execf build_mutation(block bk, node n, int deltam)
         prf("unknown mutation scope: %v\n", mt);
     }
 
-    vector name_scopes = table_find(n->arguments, sym(scopes));
-
-
+    vector name_scopes = blookup_vector(bk->h, b, n, sym(scopes));
     ins->bk = bk;
     ins->p = register_perf(bk->ev, n);
-    ins->n =  resolve_cfg(bk, n, 0);
-    ins->e = table_find(n->arguments, sym(e));
-    ins->a = table_find(n->arguments, sym(a));
-    ins->v = table_find(n->arguments, sym(v));
+    ins->n =  cfg_next(bk, b, n);
+    ins->e = blookupv(b, n, sym(e));
+    ins->a = blookupv(b, n, sym(a));
+    ins->v = blookupv(b, n, sym(v));
     ins->deltam = deltam;
     ins->scopes = vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes;
-    return cont(bk->h, do_insert, ins);
+    *e = cont(bk->h, do_insert, ins);
 }
 
 
 // merge these two
-static execf build_insert(block bk, node n)
+static void build_insert(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return build_mutation(bk, n, 1);
+    build_mutation(bk, b, n, e, f, 1);
 }
 
-static execf build_remove(block bk, node n)
+static void build_remove(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return build_mutation(bk, n, -1);
+    build_mutation(bk, b, n, e, f, -1);
 }
 
 static CONTINUATION_4_5(each_t_solution_remove,
@@ -185,112 +178,109 @@ static void each_t_remove(evaluation ev, heap h, uuid u, multibag *target,
     }
 }
 
-static CONTINUATION_8_4(do_set, block, perf, execf,
+static CONTINUATION_8_3(do_set, block, perf, execf,
                         vector, value, value, value, value,
-                        heap, perf, operator, value *);
+                        heap, perf, value *);
 static void do_set(block bk, perf p, execf n,
                    vector scopes, value mt,
                    value e, value a, value v,
-                   heap h, perf pp, operator op, value *r)
+                   heap h, perf pp, value *r)
 {
-    start_perf(p, op);
+    start_perf(p);
 
-    if (op == op_insert) {
-        value ev = lookup(r, e);
-        value av=  lookup(r, a);
-        value vv=  lookup(r, v);
-        boolean should_insert = true;
-        bag b;
-        multibag *target;
-
-        if (mt == sym(bind)) {
-            target = &bk->ev->block_f_solution;
-        } else {
-            target = &bk->ev->block_t_solution;
+    value ev = lookup(r, e);
+    value av=  lookup(r, a);
+    value vv=  lookup(r, v);
+    boolean should_insert = true;
+    bag b;
+    multibag *target;
+    
+    if (mt == sym(bind)) {
+        target = &bk->ev->block_f_solution;
+    } else {
+        target = &bk->ev->block_t_solution;
+    }
+    
+    vector_foreach(scopes, u) {
+        if (vv != register_ignore)
+            multibag_insert(target, bk->ev->h, u, ev, av, vv, 1, bk->name);
+        
+        if ((b = table_find(bk->ev->t_input, u))) {
+            apply(b->scan, s_EAv,
+                  cont(h, each_t_remove, bk->ev, bk->ev->working, u, target),
+                  ev, av, 0);
         }
-
-        vector_foreach(scopes, u) {
-            if (vv != register_ignore)
-                multibag_insert(target, bk->ev->h, u, ev, av, vv, 1, bk->name);
-
-            if ((b = table_find(bk->ev->t_input, u))) {
-                apply(b->scan, s_EAv,
-                      cont(h, each_t_remove, bk->ev, bk->ev->working, u, target),
-                      ev, av, 0);
-            }
-            if (bk->ev->t_solution && (b = table_find(bk->ev->t_solution, u))) {
-                apply(b->scan, s_EAv,
-                      cont(h, each_t_solution_remove, bk->ev, bk->ev->working, u, target),
-                      ev, av, 0);
-            }
+        if (bk->ev->t_solution && (b = table_find(bk->ev->t_solution, u))) {
+            apply(b->scan, s_EAv,
+                  cont(h, each_t_solution_remove, bk->ev, bk->ev->working, u, target),
+                  ev, av, 0);
         }
     }
-
-    apply(n, h, p, op, r);
-    stop_perf(p, pp);
+    apply(n, h, p, r);
 }
 
-static execf build_set(block bk, node n)
+static execf build_set(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector name_scopes = table_find(n->arguments, sym(scopes));
+    vector name_scopes = blookupv(b, n,sym(scopes));
 
-    return cont(bk->h, do_set,  bk, register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes,
-                table_find(n->arguments, sym(mutateType)),
-                table_find(n->arguments, sym(e)),
-                table_find(n->arguments, sym(a)),
-                table_find(n->arguments, sym(v)));
+    *e = cont(bk->h,
+              do_set, 
+              bk,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes,
+              blookupv(b, n,sym(mutateType)),
+              blookupv(b, n,sym(e)),
+              blookupv(b, n,sym(a)),
+              blookupv(b, n,sym(v)));
 }
 
-static CONTINUATION_6_4(do_erase, perf, execf, block,
+static CONTINUATION_6_3(do_erase, perf, execf, block,
                         vector, value, value,
-                        heap, perf, operator, value *);
+                        heap, perf, value *);
 static void do_erase(perf p, execf n, block bk, vector scopes, value mt, value e,
-                   heap h, perf pp, operator op, value *r)
+                   heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if (op == op_insert) {
-        bag b;
-        multibag *target;
-        value ev = lookup(r, e);
-        if (mt == sym(bind)) {
-            target = &bk->ev->block_f_solution;
-        } else {
-            target = &bk->ev->block_t_solution;
+    start_perf(p);
+    bag b;
+    multibag *target;
+    value ev = lookup(r, e);
+    if (mt == sym(bind)) {
+        target = &bk->ev->block_f_solution;
+    } else {
+        target = &bk->ev->block_t_solution;
+    }
+    
+    vector_foreach(scopes, u) {
+        // xxx - this can be done in constant time rather than
+        // the size of the object. the attribute tables are also
+        // being left behind below, which will confuse generic join
+        if ((b = table_find(bk->ev->t_input, u))) {
+            apply(b->scan, s_Eav,
+                  cont(h, each_t_remove, bk->ev, bk->ev->working, u, target),
+                  ev, 0, 0);
         }
-
-        vector_foreach(scopes, u) {
-            // xxx - this can be done in constant time rather than
-            // the size of the object. the attribute tables are also
-            // being left behind below, which will confuse generic join
-            if ((b = table_find(bk->ev->t_input, u))) {
-                apply(b->scan, s_Eav,
-                      cont(h, each_t_remove, bk->ev, bk->ev->working, u, target),
-                      ev, 0, 0);
-            }
-            if (bk->ev->t_solution && (b = table_find(bk->ev->t_solution, u))) {
-                apply(b->scan, s_Eav,
-                      cont(h, each_t_solution_remove, bk->ev, bk->ev->working, u, target),
-                      ev, 0, 0);
-            }
+        if (bk->ev->t_solution && (b = table_find(bk->ev->t_solution, u))) {
+            apply(b->scan, s_Eav,
+                  cont(h, each_t_solution_remove, bk->ev, bk->ev->working, u, target),
+                  ev, 0, 0);
         }
     }
-    apply(n, h, p, op, r);
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
-static execf build_erase(block bk, node n)
+static execf build_erase(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector name_scopes = table_find(n->arguments, sym(scopes));
+    vector name_scopes = blookup_vector(bk->h, b, n,sym(scopes));
 
-    return cont(bk->h, do_erase,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                bk,
-                vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes,
-                table_find(n->arguments, sym(mutateType)),
-                table_find(n->arguments, sym(e)));
+    *e = cont(bk->h, do_erase,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              bk,
+              vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes,
+              blookupv(b, n,sym(mutateType)),
+              blookupv(b, n,sym(e)));
 }
 
 extern void register_edb_builders(table builders)

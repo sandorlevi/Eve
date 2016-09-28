@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <pwd.h>
+#include <serialize.h>
 
 void ticks_to_timeval(struct timeval *a, ticks b);
 ticks timeval_to_ticks(struct timeval *a);

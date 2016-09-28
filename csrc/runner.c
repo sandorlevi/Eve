@@ -192,10 +192,8 @@ static void run_block(evaluation ev, block bk)
     ticks start = rdtsc();
     value *r = allocate(ev->working, (bk->regs + 1)* sizeof(value));
 
-    apply(bk->head, bh, 0, op_insert, r);
-    // flush shouldn't need r
-    apply(bk->head, bh, 0, op_flush, r);
-
+    apply(bk->head, bh, 0, r);
+    // arrange for flush
     ev->cycle_time += rdtsc() - start;
 
     if (bk->ev->non_empty) {
@@ -415,7 +413,7 @@ void inject_blocks(evaluation ev, bag source, vector inserts, vector removes)
     }
     if(inserts) {
         vector_foreach(inserts, b) {
-            vector_insert(ev->blocks, build(ev, b));
+            //            vector_insert(ev->blocks, build(ev, b));
         }
     }
 
@@ -468,7 +466,7 @@ evaluation build_evaluation(heap h,
     // xxx - compiler output reflecton
     vector_foreach(implications, i) {
         // xxx - shouldn't build take the termination?
-        vector_insert(ev->blocks, build(ev, i));
+        // vector_insert(ev->blocks, build(ev, i));
     }
 
     table_foreach(ev->scopes, name, id) {
@@ -476,7 +474,7 @@ evaluation build_evaluation(heap h,
         if(!input_bag) continue;
 
         vector_foreach(input_bag->blocks, b) {
-            vector_insert(ev->blocks, build(ev, b));
+            // vector_insert(ev->blocks, build(ev, b));
         }
     }
 

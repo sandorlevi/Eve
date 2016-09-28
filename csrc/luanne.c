@@ -104,13 +104,6 @@ static int construct_register(lua_State *L)
     return 1;
 }
 
-static int node_id(lua_State *L)
-{
-    node n = lua_touserdata(L, 1);
-    lua_pushnumber(L, (int)*((double *)n->id));
-    return (1);
-}
-
 static int none(lua_State *L)
 {
     lua_pushlightuserdata(L, register_ignore);
@@ -201,6 +194,7 @@ vector lua_compile_eve(interpreter c, heap h, buffer b, boolean tracing, bag *co
 
     *compiler_bag = lua_tovalue(c->L, 5);
 
+    /*
     int count = 0;
     foreach_lua_table(c->L, 4, k, v) {
         compiled n = allocate(c->h, sizeof(struct compiled));
@@ -214,6 +208,7 @@ vector lua_compile_eve(interpreter c, heap h, buffer b, boolean tracing, bag *co
         vector_insert(result, n);
     }
     lua_pop(c->L, 1);
+    */
     return(result);
 }
 
@@ -256,46 +251,6 @@ vector vector_from_lua(heap h, lua_State *L, int index)
     foreach_lua_table(L, index, _, v)
         vector_insert(res, lua_tovalue(L, v));
     return res;
-}
-
-
-int lua_build_node(lua_State *L)
-{
-    interpreter c = lua_context(L);
-    node n = allocate(c->h, sizeof(struct node));
-    estring x = lua_tovalue(L, 1);
-    n->type = x;
-    n->builder = table_find(builders_table(),x) ;
-
-    if (!n->builder) {
-        prf ("no such node type: %v\n", x);
-    }
-
-    n->arms = vector_from_lua(c->h, L, 2);
-    n->arguments = create_value_table(c->h);
-    n->display = create_value_table(c->h);
-
-    foreach_lua_table(L, 3, k, v)  {
-        table_set(n->arguments, lua_tovalue(c->L, k),
-                     (lua_type(L, v) == LUA_TTABLE)?
-                  vector_from_lua(c->h, L, v):
-                  lua_tovalue(L, v));
-
-        string out = allocate_string(c->h);
-        if(lua_type(L, v) == LUA_TTABLE) {
-            print_value_vector_json(out, vector_from_lua(c->h, L, v));
-        } else {
-            print_value_json(out, lua_tovalue(L, v));
-        }
-        table_set(n->display, lua_tovalue(c->L, k), out);
-    }
-
-    // xxx - shouldn't really be a value
-    value node_id = lua_tovalue(L, 4);
-    n->id = node_id;
-
-    lua_pushlightuserdata(L, n);
-    return 1;
 }
 
 int lua_create_edb(lua_State *L)
@@ -351,8 +306,6 @@ interpreter build_lua()
     define(c, "sstring", construct_string);
     define(c, "generate_uuid", lua_gen_uuid);
     define(c, "value_to_string", lua_print_value);
-    define(c, "build_node", lua_build_node);
-    define(c, "node_id", node_id);
     define(c, "create_edb", lua_create_edb);
     define(c, "insert_edb", lua_insert_edb);
     define(c, "dump_edb", lua_dump_edb);

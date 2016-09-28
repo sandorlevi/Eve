@@ -30,3 +30,24 @@ static inline byte extract(u64 source, int highest_start, int bits)
     if (x < 0) x = 0;
     return (source >> x) & ((1<<bits) -1);
 }
+
+
+static CONTINUATION_3_1(fill_bag, bag, value *, value *, value);
+static void fill_bag(bag target, value *e, value *a, value v)
+{
+    if (!*e) {*e = v; return;}
+    if (!*a) {*a = v; return;}
+    apply(target->insert, *e, *a, v, 1, 0);
+    *e = *a = 0;
+}
+
+buffer_handler allocate_deserialize(heap h, closure(handler, value));
+
+static inline buffer_handler deserialize_into_bag(heap h, bag b)
+{
+    value *e = allocate(h, sizeof(value));
+    value *a = allocate(h, sizeof(value));
+    *e = *a = 0;
+    return(allocate_deserialize(h, cont(h, fill_bag, b, e, a)));
+}
+void serialize_edb(buffer dest, edb db);

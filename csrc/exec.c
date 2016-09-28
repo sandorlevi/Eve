@@ -1,30 +1,28 @@
 #include <runtime.h>
 #include <exec.h>
 
-static CONTINUATION_3_4(do_sub_tail, perf, value, vector, heap, perf, operator, value *);
+static CONTINUATION_3_3(do_sub_tail, perf, value, vector, heap, perf, value *);
 static void do_sub_tail(perf p,
                         value resreg,
                         vector outputs,
-                        heap h, perf pp, operator op, value *r)
+                        heap h, perf pp, value *r)
 {
     // just drop flush and remove on the floor
-    start_perf(p, op);
-    if ( op == op_insert) {
-        table results = lookup(r, resreg);
-        vector result = allocate_vector(results->h, vector_length(outputs));
-        extract(result, outputs, r);
-        table_set(results, result, etrue);
-    }
+    start_perf(p);
+    table results = lookup(r, resreg);
+    vector result = allocate_vector(results->h, vector_length(outputs));
+    extract(result, outputs, r);
+    table_set(results, result, etrue);
     stop_perf(p, pp);
 }
 
-static execf build_sub_tail(block bk, node n)
+static void build_sub_tail(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h,
-                do_sub_tail,
-                register_perf(bk->ev, n),
-                table_find(n->arguments, sym(pass)),
-                table_find(n->arguments, sym(provides)));
+    *e = cont(bk->h,
+              do_sub_tail,
+              register_perf(bk->ev, n),
+              blookupv(b, n, sym(pass)),
+              blookupv(b, n, sym(provides)));
 }
 
 
@@ -58,20 +56,20 @@ static void set_ids(sub s, vector key, value *r)
     copyout(r, s->ids, k);
 }
 
-static CONTINUATION_2_4(do_sub, perf, sub, heap, perf, operator, value *);
-static void do_sub(perf p, sub s, heap h, perf pp, operator op, value *r)
+static void subflush(sub s, flushf n)
 {
-    start_perf(p, op);
-
-    if ((op == op_flush) || (op == op_close)){
-        if (s->results){
-            s->results = 0;
-            destroy(s->resh);
-        }
-        apply(s->next, h, p, op, r);
-        stop_perf(p, pp);
-        return;
+    if (s->results){
+        s->results = 0;
+        destroy(s->resh);
     }
+    apply(n);
+    return;
+}
+
+static CONTINUATION_2_3(do_sub, perf, sub, heap, perf, value *);
+static void do_sub(perf p, sub s, heap h, perf pp, value *r)
+{
+    start_perf(p);
 
     table res;
     extract(s->v, s->projection, r);
@@ -94,222 +92,209 @@ static void do_sub(perf p, sub s, heap h, perf pp, operator op, value *r)
             vector_foreach(s->ids, i)
                 store(r, i, generate_uuid());
         }
-        apply(s->leg, h, p, op, r);
+        apply(s->leg, h, p, r);
         table_set(s->results, key, res);
     }
 
     // cross
     table_foreach(res, n, _) {
         copyout(r, s->outputs, n);
-        apply(s->next, h, p, op, r);
+        apply(s->next, h, p, r);
     }
     stop_perf(p, pp);
 }
 
 
-static execf build_sub(block bk, node n)
+static void build_sub(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     sub s = allocate(bk->h, sizeof(struct sub));
-    s->id = n->id;
     s->h = bk->h;
     s->results = 0;
     s->ids_cache = create_value_vector_table(s->h);
-    s->projection = table_find(n->arguments, sym(projection));
+    s->projection = blookup_vector(bk->h, b, n, sym(projection));
     s->v = allocate_vector(s->h, vector_length(s->projection));
     s->leg = resolve_cfg(bk, n, 1);
-    s->outputs = table_find(n->arguments, sym(provides));
-    s->resreg =  table_find(n->arguments, sym(pass));
-    s->ids = table_find(n->arguments, sym(ids));
-    s->next = resolve_cfg(bk, n, 0);
-    s->id_collapse = (table_find(n->arguments, sym(id_collapse))==etrue)?true:false;
-    return cont(s->h,
-                do_sub,
-                register_perf(bk->ev, n),
-                s);
+    s->outputs = blookup_vector(bk->h, b, n, sym(provides));
+    s->resreg =  blookupv(b, n, sym(pass));
+    s->ids = blookup_vector(bk->h, b, n, sym(ids));
+    s->next = *e;
+    s->id_collapse = (blookupv(b, n, sym(id_collapse))==etrue)?true:false;
+    *e = cont(s->h,
+              do_sub,
+              register_perf(bk->ev, n),
+              s);
 
 }
 
-static CONTINUATION_3_4(do_choose_tail, perf, execf, value, heap, perf, operator, value *);
-static void do_choose_tail(perf p, execf next, value flag, heap h, perf pp, operator op, value *r)
+static CONTINUATION_3_3(do_choose_tail, perf, execf, value, heap, perf, value *);
+static void do_choose_tail(perf p, execf next, value flag, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
+    start_perf(p);
     // terminate flush and close along this leg, the head will inject it into the
     // tail
-    if ((op != op_flush) && (op != op_close)) {
-        boolean *x = lookup(r, flag);
-        *x = true;
-        stop_perf(p, pp);
-        if (next) apply(next, h, p, op, r);
-    }
+    // explicit flush gets rid of this stupid bool and the synchronous assumption
+    boolean *x = lookup(r, flag);
+    *x = true;
+    stop_perf(p, pp);
+    if (next) apply(next, h, p, r);
     stop_perf(p, pp);
 }
 
-static execf build_choose_tail(block bk, node n)
+static void build_choose_tail(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    table results = create_value_vector_table(bk->h);
-    return cont(bk->h,
-                do_choose_tail,
-                register_perf(bk->ev, n),
-                (vector_length(n->arms) > 0)? resolve_cfg(bk, n, 0):0,
-                table_find(n->arguments, sym(pass)));
+    vector arms = blookup_vector(bk->h, b, n, sym(arms));
+    *e = cont(bk->h,
+              do_choose_tail,
+              register_perf(bk->ev, n),
+              // xxx - fix
+              (vector_length(arms) > 0)? cfg_next(bk, b, n):0,
+              blookupv(b, n, sym(pass)));
 }
 
-static CONTINUATION_5_4(do_choose, perf, execf, vector, value, boolean *,
-                        heap, perf, operator, value *);
+static CONTINUATION_5_3(do_choose, perf, execf, vector, value, boolean *,
+                        heap, perf, value *);
 static void do_choose(perf p, execf n, vector legs, value flag, boolean *flagstore,
-                      heap h, perf pp, operator op, value *r)
+                      heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if ((op == op_flush) || (op == op_close)) {
-        apply(n, h, p, op, r);
-    } else {
-        *flagstore = false;
-        store(r, flag, flagstore);
-        vector_foreach (legs, i){
-            apply((execf) i, h, p, op, r);
-            apply((execf) i, h, p, op_flush, r);
-            if (*flagstore) {
-                stop_perf(p, pp);
-                return;
-            }
+    flushf f;
+    start_perf(p);
+    *flagstore = false;
+    store(r, flag, flagstore);
+    vector_foreach (legs, i){
+        apply((execf) i, h, p, r);
+        apply(f);
+        if (*flagstore) {
+            stop_perf(p, pp);
+            return;
         }
     }
     stop_perf(p, pp);
 }
 
 
-static execf build_choose(block bk, node n)
+static void build_choose(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    int arms = vector_length(n->arms);
-    vector v = allocate_vector(bk->h, arms - 1);
-    for (int i = 1 ; i < arms; i++ )
-        vector_set(v, i - 1, resolve_cfg(bk, n, i));
+    vector arms = blookup_vector(bk->h, b, n, sym(arms));
+    int narms = vector_length(arms);
+    vector v = allocate_vector(bk->h, narms);
+    // ooh - take out the damn index!
+    vector_foreach(arms, i) 
+        vector_insert(v, resolve_cfg(bk, i));
 
-    return cont(bk->h,
-                do_choose,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                v,
-                table_find(n->arguments, sym(pass)),
-                allocate(bk->h, sizeof(boolean)));
+    *e = cont(bk->h,
+              do_choose,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              v,
+              blookupv(b, n, sym(pass)),
+              allocate(bk->h, sizeof(boolean)));
 }
 
 
-static CONTINUATION_5_4(do_not,
+static CONTINUATION_5_3(do_not,
                         perf, execf, execf, value, boolean *,
-                        heap, perf, operator, value *);
+                        heap, perf, value *);
 static void do_not(perf p, execf next, execf leg, value flag, boolean *flagstore,
-                   heap h, perf pp, operator op, value *r)
+                   heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    // should also flush down the leg
-    if ((op == op_flush)  || (op == op_close)){
-        apply(next, h, p, op, r);
-        stop_perf(p, pp);
-        return;
-    }
+    start_perf(p);
     *flagstore = false;
     store(r, flag, flagstore);
 
-    apply(leg, h, p, op, r);
+    apply(leg, h, p, r);
 
     if (!*flagstore)
-        apply(next, h, p, op, r);
+        apply(next, h, p, r);
     stop_perf(p, pp);
 }
 
 
-static execf build_not(block bk, node n)
+static void build_not(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h,
-                do_not,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                resolve_cfg(bk, n, 1),
-                table_find(n->arguments, sym(pass)),
-                allocate(bk->h, sizeof(boolean)));
+    *e = cont(bk->h,
+              do_not,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              resolve_cfg(bk, blookupv(b, n, sym(arms))),
+              blookupv(b, n, sym(pass)),
+              allocate(bk->h, sizeof(boolean)));
 }
 
 
-static CONTINUATION_4_4(do_move, perf, execf, value,  value, heap, perf, operator, value *);
-static void do_move(perf p, execf n, value dest, value src, heap h, perf pp, operator op, value *r)
+static CONTINUATION_4_3(do_move, perf, execf, value,  value, heap, perf, value *);
+static void do_move(perf p, execf n, value dest, value src, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if (op == op_insert) {
-        store(r, dest, lookup(r, src));
-    }
-    apply(n, h, p, op, r);
+    start_perf(p);
+    store(r, dest, lookup(r, src));
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
 
-static execf build_move(block bk, node n)
+static void build_move(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_move,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                // nicer names would be nice
-                table_find(n->arguments, sym(a)),
-                table_find(n->arguments, sym(b)));
+    *e = cont(bk->h, do_move,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              // nicer names would be nice
+              blookupv(b, n, sym(a)),
+              blookupv(b, n, sym(b)));
 }
 
 
-static CONTINUATION_3_4(do_merge, execf, int, u32 *, heap, perf, operator, value *);
-static void do_merge(execf n, int count, u32 *total, heap h, perf pp, operator op, value *r)
+static CONTINUATION_3_0(do_merge, execf, int, u32 *);
+static void do_merge_flush(flushf n, int count, u32 *total)
 {
-    if ((op == op_flush) || (op == op_close)) {
-        *total = *total +1;
-        if (*total == count) {
-            *total = 0;
-        } else return;
-    }
-    apply(n, h, pp, op, r);
+    *total = *total +1;
+    if (*total == count) {
+        *total = 0;
+    } else return;
 }
 
-static execf build_merge(block bk, node n)
+static execf build_merge(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     u32 *c = allocate(bk->h, sizeof(u32));
     *c = 0;
-    return cont(bk->h, do_merge, resolve_cfg(bk, n, 0),
-                (int)*(double *)table_find(n->arguments, sym(arms)),
-                c);
+    *f = cont(bk->h, do_merge, resolve_cfg(bk, n, 0),
+              (int)*(double *)lookupv(b, n, sym(arms)),
+              c);
 }
 
-static CONTINUATION_1_4(do_terminal, block, heap, perf, operator, value *);
-static void do_terminal(block bk, heap h, perf pp, operator op, value *r)
+// this is flushy, not inserty
+static CONTINUATION_1_3(do_terminal, block, heap, perf, value *);
+static void do_terminal(block bk, heap h, perf pp, value *r)
 {
-    if (op == op_insert) apply(bk->ev->terminal);
+    apply(bk->ev->terminal);
 }
 
-static execf build_terminal(block bk, node n)
+static void build_terminal(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_terminal, bk);
+    *e = cont(bk->h, do_terminal, bk);
 }
 
-static CONTINUATION_8_4(do_time,
+
+CONTINUATION_1_0(remove_timer, timer);
+
+static CONTINUATION_8_3(do_time,
                         block, perf, execf, value, value, value, value, timer,
-                        heap, perf, operator, value *);
-static void do_time(block bk, perf p, execf n, value hour, value minute, value second, value frame, timer t, heap h,
-                    perf pp, operator op, value *r)
+                        heap, perf, value *);
+static void do_time(block bk, perf p, execf n, value hour, value minute, value second, value frame, timer t, 
+                    heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if (op == op_close) {
-        remove_timer(t);
-    }
-    if (op == op_insert) {
-        unsigned int seconds, minutes,  hours;
-        clocktime(bk->ev->t, &hours, &minutes, &seconds);
-        value sv = box_float((double)seconds);
-        value mv = box_float((double)minutes);
-        value hv = box_float((double)hours);
-        u64 ms = ((((u64)bk->ev->t)*1000ull)>>32) % 1000;
-        value fv = box_float((double)ms);
-        store(r, frame, fv);
-        store(r, second, sv);
-        store(r, minute, mv);
-        store(r, hour, hv);
-    }
-    apply(n, h, p, op, r);
+    start_perf(p);
+
+    unsigned int seconds, minutes,  hours;
+    clocktime(bk->ev->t, &hours, &minutes, &seconds);
+    value sv = box_float((double)seconds);
+    value mv = box_float((double)minutes);
+    value hv = box_float((double)hours);
+    u64 ms = ((((u64)bk->ev->t)*1000ull)>>32) % 1000;
+    value fv = box_float((double)ms);
+    store(r, frame, fv);
+    store(r, second, sv);
+    store(r, minute, mv);
+    store(r, hour, hv);
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
@@ -320,151 +305,128 @@ static void time_expire(block bk)
 }
 
 // xxx  - handle the bound case
-static execf build_time(block bk, node n, execf *arms)
+static void build_time(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    value hour = table_find(n->arguments, sym(hours));
-    value minute = table_find(n->arguments, sym(minutes));
-    value second = table_find(n->arguments, sym(seconds));
-    value frame = table_find(n->arguments, sym(frames));
+    value hour = blookupv(b, n, sym(hours));
+    value minute = blookupv(b, n, sym(minutes));
+    value second = blookupv(b, n, sym(seconds));
+    value frame = blookupv(b, n, sym(frames));
     ticks interval = seconds(60 * 60);
     if(frame != 0) interval = milliseconds(1000 / 60);
     else if(second != 0) interval = seconds(1);
     else if(minute != 0) interval = seconds(60);
     // xxx - this shoud be only one of these guys at the finest resolution
-    // requested for by the block
+    // requested for by the block..this should really just be 
+    // 'ask the commit time', with a different thing for
+    // 'create an object for each time'
     timer t = register_periodic_timer(tcontext()->t, interval, cont(bk->h, time_expire, bk));
-    return cont(bk->h,
-                do_time,
-                bk,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                hour,
-                minute,
-                second,
-                frame,
-                t);
+    vector_insert(bk->cleanup, cont(bk->h, remove_timer, t));
+    *e =  cont(bk->h,
+               do_time,
+               bk,
+               register_perf(bk->ev, n),
+               cfg_next(bk, b, n),
+               hour,
+               minute,
+               second,
+               frame,
+               t);
 }
 
-static CONTINUATION_6_4(do_random,
-                        block, perf, execf, value, value, timer,
-                        heap, perf, operator, value *);
-static void do_random(block bk, perf p, execf n, value dest, value seed, timer t, heap h, perf pp, operator op, value *r)
+static CONTINUATION_5_3(do_random,
+                        block, perf, execf, value, value, 
+                        heap, perf, value *);
+static void do_random(block bk, perf p, execf n, value dest, value seed, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if (op == op_close) {
-        remove_timer(t);
-    }
+    start_perf(p);
 
-    if (op == op_insert) {
-        // This is all very scientific.
-        u64 ub = value_as_key(lookup(r, seed));
-        u32 tb = (u64)bk->ev->t & (0x200000 - 1); // The 21 bottom tick bits are pretty random
-
-        // Fold the tick bits down into a u8
-        u8 ts = (tb ^ (tb >> 7)
-                 ^ (tb >> 14)) & (0x80 - 1);
-
-        // Fold the user seed bits down into a u8
-        u8 us = (ub ^ (ub >> 7)
-                 ^ (ub >> 14)
-                 ^ (ub >> 21)
-                 ^ (ub >> 28)
-                 ^ (ub >> 35)
-                 ^ (ub >> 42)
-                 ^ (ub >> 49)
-                 ^ (ub >> 56)
-                 ^ (ub >> 63)) & (0x80 - 1);
-
-        // We fold down to 7 bits to gain some semblance of actual entropy. This means the RNG only has 128 outputs for now.
-        u8 true_seed = us ^ ts;
-
-        // No actual rng for now.
-        store(r, dest, box_float(((double)true_seed)/128.0));
-    }
-    apply(n, h, p, op, r);
+    // This is all very scientific.
+    u64 ub = value_as_key(lookup(r, seed));
+    u32 tb = (u64)bk->ev->t & (0x200000 - 1); // The 21 bottom tick bits are pretty random
+    
+    // Fold the tick bits down into a u8
+    u8 ts = (tb ^ (tb >> 7)
+             ^ (tb >> 14)) & (0x80 - 1);
+    
+    // Fold the user seed bits down into a u8
+    u8 us = (ub ^ (ub >> 7)
+             ^ (ub >> 14)
+             ^ (ub >> 21)
+             ^ (ub >> 28)
+             ^ (ub >> 35)
+             ^ (ub >> 42)
+             ^ (ub >> 49)
+             ^ (ub >> 56)
+             ^ (ub >> 63)) & (0x80 - 1);
+    
+    // We fold down to 7 bits to gain some semblance of actual entropy. This means the RNG only has 128 outputs for now.
+    u8 true_seed = us ^ ts;
+    
+    // No actual rng for now.
+    store(r, dest, box_float(((double)true_seed)/128.0));
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
-static execf build_random(block bk, node n)
+static execf build_random(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    value dest = table_find(n->arguments, sym(return));
-    value seed = table_find(n->arguments, sym(seed));
+    value dest = blookupv(b, n, sym(return));
+    value seed = blookupv(b, n, sym(seed));
     ticks interval = milliseconds(1000 / 60);
-    timer t = register_periodic_timer(tcontext()->t, interval, 0);
-    return cont(bk->h,
-                do_random,
-                bk,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                dest,
-                seed,
-                t);
+    *e = cont(bk->h,
+              do_random,
+              bk,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              dest,
+              seed);
 }
 
-static CONTINUATION_3_4(do_fork, perf, int, execf *, heap, perf, operator, value *) ;
-static void do_fork(perf p, int legs, execf *b, heap h, perf pp, operator op, value *r)
+static CONTINUATION_3_3(do_fork, perf, int, execf *, heap, perf, value *) ;
+static void do_fork(perf p, int legs, execf *b, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    for (int i =0; i<legs ;i ++) apply(b[i], h, p, op, r);
+    start_perf(p);
+    for (int i =0; i<legs ;i ++) apply(b[i], h, p, r);
     stop_perf(p, pp);
 }
 
-static execf build_fork(block bk, node n)
+static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    int count = vector_length(n->arms);
+    vector arms = blookup_vector(bk, b n, sym(arms));
+    int count = vector_length(arms);
     execf *a = allocate(bk->h, sizeof(execf) * count);
 
     for (int i=0; i < count; i++)
         a[i] = resolve_cfg(bk, n, i);
-    return cont(bk->h, do_fork, register_perf(bk->ev, n), count, a);
+    *e = cont(bk->h, do_fork, register_perf(bk->ev, n), count, a);
 }
 
-static CONTINUATION_2_4(do_trace, execf, node, heap, perf, operator, value *);
-static void do_trace(execf next, node n, heap h, perf pp, operator op, value *r)
+static CONTINUATION_3_3(do_trace, execf, table, uuid, heap, perf, value *);
+static void do_trace(execf next, table arguments, uuid id, heap h, perf pp, value *r)
 {
-    prf("%s|%010r %v",
-        (op == op_insert ? "insert" : (op == op_flush) ? "flush " : "close "),
-        table_find(n->arguments, sym(name)),
-        n->id);
-    if ((op != op_flush) && (op != op_close))
-        table_foreach(n->arguments, k, v) {
-            // xxx - what is name doing in there anyways?
-            if ((k != sym(name)) && (k != sym(pass)))
-                prf (" %r=%v ", k, lookup(r, v));
-        }
-    prf("\n");
-    apply(next, h, pp, op, r);
-}
-
-static execf build_trace(block bk, node n, execf *arms)
-{
-    return cont(bk->h,
-                do_trace,
-                resolve_cfg(bk, n, 0),
-                n);
-}
-
-
-static CONTINUATION_3_4(do_regfile, execf, perf, int, heap, perf, operator, value *);
-static void do_regfile(execf n, perf p, int size, heap h, perf pp, operator op, value *ignore)
-{
-    start_perf(p, op);
-    value *r;
-    if (op == op_insert) {
-        // xxx - shouldn't be necessary
-        memset(r, 0, size * sizeof(value));
+    prf("%010r %v",
+        table_find(arguments, sym(name)),
+        id);
+    table_foreach(arguments, k, v) {
+        // xxx - what is name doing in there anyways?
+        if ((k != sym(name)) && (k != sym(pass)))
+            prf (" %r=%v ", k, lookup(r, v));
     }
-    apply(n, h, p, op, r);
-    stop_perf(p, pp);
+    prf("\n");
+    apply(next, h, pp, r);
 }
 
-static execf build_regfile(block bk, node n, execf *arms)
+static void build_trace(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h,
-                do_regfile,
-                resolve_cfg(bk, n, 0),
-                register_perf(bk->ev, n),
-                (int)*(double *)table_find(n->arguments, sym(count)));
+    table arguments = create_table(bk->h);
+    // should exclude some
+    edb_foreach_av(b, n, a, v, c)
+        table_set(arguments, a, v);
+    *e = cont(bk->h,
+              do_trace,
+              cfg_next(bk, b, n),
+              arguments,
+              n);
 }
 
 static table builders;
@@ -502,17 +464,16 @@ table builders_table()
 }
 
 
-static void print_dot_internal(buffer dest, table visited, table counters, node n)
+static void print_dot_internal(buffer dest, table visited, table counters, bag b, uuid n)
 {
 
     if (!table_find(visited, n)) {
-
-
+        vector arms = blookup_vector(transient, b, n, sym(arms));
         buffer description = allocate_string(dest->h);
-        estring sig = table_find(n->arguments, sym(sig));
-        estring e = table_find(n->arguments, sym(e));
-        estring a = table_find(n->arguments, sym(a));
-        estring v = table_find(n->arguments, sym(v));
+        estring sig = blookupv(b, n, sym(sig));
+        estring e = blookupv(b, n, sym(e));
+        estring a = blookupv(b, n, sym(a));
+        estring v = blookupv(b, n, sym(v));
 
         if(sig != 0) {
             bprintf(description, "sig: %r, e: %r, a: %r, v: %r\n", sig, e, a, v);
@@ -520,11 +481,11 @@ static void print_dot_internal(buffer dest, table visited, table counters, node 
 
         perf p = table_find(counters, n);
         bprintf(dest, "%v [label=\"%r:%v:%d:%b\"];\n",
-                n->id, n->type,
-                n->id, p?p->count:0, description);
+                n, blookupv(b, n, sym(type)),
+                n, p?p->count:0, description);
         table_set(visited, n, (void *)1);
-        vector_foreach(n->arms, i) {
-            bprintf(dest, "%v -> %v;\n", n->id, ((node)i)->id);
+        vector_foreach(arms, i) {
+            bprintf(dest, "%v -> %v;\n", n, i);
             print_dot_internal(dest, visited, counters, i);
         }
     }
@@ -540,35 +501,41 @@ string print_dot(heap h, block bk, table counters)
     return dest;
 }
 
-static void force_node(block bk, node n)
+static void force_node(block bk, bag b, uuid n)
 {
     if (!table_find(bk->nmap, n)){
         execf *x = allocate(bk->h, sizeof(execf *));
         table_set(bk->nmap, n, x);
-        vector_foreach(n->arms, i)
-            force_node(bk, i);
-        *x = n->builder(bk, n);
+        // this is* guarenteed to be ordered - lets use that please - pass next and f through e if its available
+        // what if its not
+
+        //        vector_foreach(n->arms, i)
+        //            force_node(bk, i);
+        execf e;
+        flushf f;
+        
+        *x = n->builder(bk, b, n, &e, &f);
     }
 }
 
 void block_close(block bk)
 {
-    apply(bk->head, 0, 0, op_close, 0);
+    // who calls this and for what purpose? do they want a flush? 
     destroy(bk->h);
 }
 
-block build(evaluation ev, compiled c)
+block build(evaluation ev, bag b, uuid root)
 {
     heap h = allocate_rolling(pages, sstring("build"));
     block bk = allocate(h, sizeof(struct block));
     bk->ev = ev;
-    bk->regs = c->regs;
+    bk->regs = (int)(double *)lookupv(b, root, sym(regs));
     bk->h = h;
-    bk->name = c->name;
+    bk->name = lookupv(b, root, sym(name));
     // this is only used during building
     bk->nmap = allocate_table(bk->h, key_from_pointer, compare_pointer);
-    bk->start  =c->head;
-    force_node(bk, c->head);
-    bk->head = *(execf *)table_find(bk->nmap, c->head);
+    bk->start = lookupv(b, root, sym(regs));
+    force_node(bk, b, bk->start);
+    bk->head = *(execf *)table_find(bk->nmap, bk->start);
     return bk;
 }

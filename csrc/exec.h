@@ -1,11 +1,14 @@
+typedef execf (*buildf)(block, bag b, uuid e, execf *, flushf *);
+
 static void exec_error(evaluation e, char *format, ...)
 {
     prf ("error %s\n", format);
 }
 
-static inline execf resolve_cfg(block bk, node n, int index)
+// xxx - ok, arms are currently ordered...break that?
+static inline execf resolve_cfg(block bk, uuid n)
 {
-    return (*(execf *)table_find(bk->nmap, vector_get(n->arms, index)));
+    return (*(execf *)table_find(bk->nmap, n));
 }
 
 static boolean isreg(value k)
@@ -23,7 +26,19 @@ static inline value lookup(value *r, value k)
     return k;
 }
 
-static perf register_perf(evaluation e, node n)
+// xxx - should really actually coerce to a string
+static inline estring lookup_string(value *r, value k)
+{
+    value f = lookup(r, k);
+    if (type_of(f) == estring_space) return f;
+    buffer out = allocate_buffer(transient, 10);
+    print_value(out, r);
+    // xxx - leave in a non-comparable space and promote only on demand
+    return intern_buffer(out);
+}
+
+
+static perf register_perf(evaluation e, uuid n)
 {
     perf p = allocate(e->h, sizeof(struct perf));
     p->time = 0;
@@ -73,19 +88,10 @@ static inline int reg(value n)
 
 
 
-static inline void start_perf(perf p, operator op)
+static inline void start_perf(perf p)
 {
-    if (op== op_insert) {
-        if (p->trig == 1) {
-            p->count=0;
-            p->trig = 0;
-        }
-        p->count++;
-    }
-    if (op == op_flush) p->trig = 1;
-
+    p->count++;
     p->start = rdtsc();
-
 }
 
 static inline void stop_perf(perf p, perf pp)
@@ -95,3 +101,9 @@ static inline void stop_perf(perf p, perf pp)
         pp->time -= delta;
     p->time += delta;
 }
+
+static execf cfg_next(block bk, bag g, uuid n)
+{
+    return 0;
+}
+

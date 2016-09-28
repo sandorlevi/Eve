@@ -3,13 +3,6 @@
 #include <unix/unix.h>
 #include <types.h>
 
-typedef enum {
-    op_insert = 1,
-    op_flush,
-    op_close
-} operator;
-
-
 u64 key_of(value);
 boolean equals(value, value);
 
@@ -45,48 +38,32 @@ typedef struct perf {
     int trig;
 } *perf;
 
-typedef closure(execf, heap, perf, operator, value *);
+typedef closure(execf, heap, perf, value *);
+typedef closure(flushf);
 
 #define def(__s, __v, __i)  table_set(__s, intern_string((unsigned char *)__v, cstring_length((char *)__v)), __i);
 
 void print_value(buffer, value);
 
-typedef struct node *node;
 typedef struct evaluation *evaluation;
 typedef struct block *block;
-typedef execf (*buildf)(block, node);
 
-struct node {
-    value id;
-    estring type;
-    buildf builder;
-    vector arms;
-    table arguments;
-    table display;
-};
 
 #include <edb.h>
 #include <multibag.h>
 
 typedef closure(evaluation_result, multibag, multibag);
 
-typedef closure(block_completion, boolean);
-
-typedef struct compiled {
-    string name;
-    node head;
-    int regs;
-    bag compiler_bag;
-} *compiled;
-
 struct block {
     heap h;
     int regs;
     string name;
     execf head;
+    flushf flush;
     evaluation ev;
     table nmap;
-    node start;
+    uuid start;
+    vector cleanup;
 };
 
 typedef closure(error_handler, char *, bag, uuid);
@@ -132,12 +109,11 @@ struct evaluation  {
 void execute(evaluation);
 
 table builders_table();
-block build(evaluation e, compiled c);
+block build(evaluation e, bag b, uuid root);
 table start_fixedpoint(heap, table, table, table);
 void close_evaluation(evaluation);
 
 extern char *pathroot;
-
 
 vector compile_eve(heap h, buffer b, boolean tracing, bag *compiler_bag);
 
@@ -180,27 +156,20 @@ object_handler create_json_session(heap h, evaluation ev, endpoint down);
 evaluation process_resolve(process_bag, uuid);
 
 
-static CONTINUATION_3_1(fill_bag, bag, value*, value *, value);
-static void fill_bag(bag target, value *e, value *a, value v)
-{
-    if (!*e) {*e = v; return;}
-    if (!*a) {*a = v; return;}
-    apply(target->insert, *e, *a, v, 1, 0);
-    *e = *a = 0;
-}
-
-buffer_handler allocate_deserialize(heap h, closure(handler, value));
-
-static inline buffer_handler deserialize_into_bag(heap h, bag b)
-{
-    value *e = allocate(h, sizeof(value));
-    value *a = allocate(h, sizeof(value));
-    *e = *a = 0;
-    return(allocate_deserialize(h, cont(h, fill_bag, b, e, a)));
-}
-
 bag connect_postgres(station s, estring user, estring password, estring database);
 bag env_init();
 bag start_log(bag base, char *filename);
-void serialize_edb(buffer dest, edb db);
 
+
+static inline value blookupv(bag b, value e, value a)
+{
+    lookupv((edb)b, e, a);
+}
+
+static inline vector blookup_vector(heap h, bag b, value e, value a)
+{
+    lookup_vector(h, (edb)b, e, a);
+}
+
+
+ 

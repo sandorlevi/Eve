@@ -8,6 +8,7 @@ typedef struct context {
     timers t;
     heap page_heap;
     heap h;
+    heap short_lived;
     selector s;
     queue *input_queues;
     queue *output_queues;
@@ -27,3 +28,4 @@ typedef int tid;
 
 extern pthread_key_t pkey;
 #define tcontext() ((context)pthread_getspecific(pkey))
+#define transient (tcontext()->short_lived)

@@ -43,6 +43,7 @@ typedef struct leaf {
 #define s_EAV (e_sig | a_sig | v_sig)
 
 value lookupv(edb b, uuid e, estring a);
+vector lookup_vector(heap h, edb b, uuid e, estring a);
 
 int edb_size(edb b);
 void destroy_bag(bag b);

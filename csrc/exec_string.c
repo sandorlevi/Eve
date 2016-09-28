@@ -2,40 +2,33 @@
 #include <exec.h>
 
 
-static CONTINUATION_4_4(do_concat, perf, execf, value, vector, heap, perf, operator, value *);
-static void do_concat(perf p, execf n, value dest, vector terms, heap h, perf pp, operator op, value *r)
+static CONTINUATION_4_3(do_concat, perf, execf, value, vector, heap, perf, value *);
+static void do_concat(perf p, execf n, value dest, vector terms, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if(op == op_close) {
-        apply(n, h, p, op, r);
-        stop_perf(p, pp);
-        return;
-    }
+    start_perf(p);
     buffer b = allocate_string(h);
-
+    
     vector_foreach(terms, i)
         print_value_raw(b, lookup(r, i));
-
+    
     store(r, dest, intern_string(bref(b, 0), buffer_length(b)));
-    apply(n, h, p, op, r);
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
 
-static execf build_concat(block bk, node n)
+static void build_concat(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_concat,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                table_find(n->arguments, sym(return)),
-                table_find(n->arguments, sym(variadic)));
+    *e = cont(bk->h, do_concat,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n, sym(return)),
+              blookupv(b, n, sym(variadic)));
 }
 
 
-
-
 static inline void output_split(execf n, buffer out, int ind,
-                                heap h, perf p, operator op, value *r, value token, value index,
+                                heap h, perf p, value *r, value token, value index,
                                 boolean bound_index, boolean bound_token)
 {
     estring k = intern_buffer(out);
@@ -43,118 +36,114 @@ static inline void output_split(execf n, buffer out, int ind,
         (!bound_token || (k == lookup(r, token)))){
         store(r, token, k) ;
         store(r, index, box_float(ind));
-        apply(n, h, p, op, r);
+        apply(n, h, p, r);
     }
 }
 
-static CONTINUATION_8_4(do_split, perf, execf,
+static CONTINUATION_8_3(do_split, perf, execf,
                         value, value, value, value,
                         boolean, boolean,
-                        heap, perf, operator, value *);
+                        heap, perf, value *);
 static void do_split(perf p, execf n,
                      value token, value text, value index, value by,
                      boolean bound_index, boolean bound_token,
-                     heap h, perf pp, operator op, value *r)
+                     heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if ((op != op_flush) && (op != op_close)) {
-        buffer out = 0;
-        int j = 0;
-        int ind = 0;
-        estring s = lookup(r, text);
-        estring k = lookup(r, by);
-        // utf8
-        for (int i = 0; i < s->length; i++) {
-            character si = s->body[i];
-            character ki = k->body[j];
-
-            if (!out) out = allocate_string(h);
-            if (si == ki) {
-                j++;
-            } else {
-                for (int z = 0; z < j; z++)
-                    string_insert(out, k->body[z]);
-                j = 0;
-                string_insert(out, si);
-            }
-            if (j == k->length) {
-                j = 0;
-                output_split(n, out, ++ind, h, p, op, r, token, index, bound_index, bound_token);
-                buffer_clear(out);
-            }
+    start_perf(p);
+    buffer out = 0;
+    int j = 0;
+    int ind = 0;
+    estring s = lookup(r, text);
+    estring k = lookup(r, by);
+    // utf8
+    for (int i = 0; i < s->length; i++) {
+        character si = s->body[i];
+        character ki = k->body[j];
+        
+        if (!out) out = allocate_string(h);
+        if (si == ki) {
+            j++;
+        } else {
+            for (int z = 0; z < j; z++)
+                string_insert(out, k->body[z]);
+            j = 0;
+            string_insert(out, si);
         }
-        if (out && buffer_length(out))
-            output_split(n, out, ++ind, h, p, op, r, token, index, bound_index, bound_token);
-    } else apply(n, h, p, op, r);
+        if (j == k->length) {
+            j = 0;
+            output_split(n, out, ++ind, h, p, r, token, index, bound_index, bound_token);
+            buffer_clear(out);
+        }
+    }
+    if (out && buffer_length(out))
+        output_split(n, out, ++ind, h, p, r, token, index, bound_index, bound_token);
     stop_perf(p, pp);
 }
 
 
 // xxx - bound index and bound filter are just split
-static execf build_split_bound_index(block bk, node n)
+static void build_split_bound_index(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_split,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                table_find(n->arguments, sym(token)),
-                table_find(n->arguments, sym(text)),
-                table_find(n->arguments, sym(index)),
-                table_find(n->arguments, sym(by)),
-                true, false);
+    *e = cont(bk->h, do_split,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n, sym(token)),
+              blookupv(b, n, sym(text)),
+              blookupv(b, n, sym(index)),
+              blookupv(b, n, sym(by)),
+              true, false);
 }
 
-static execf build_split_filter(block bk, node n)
+static void build_split_filter(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_split,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                table_find(n->arguments, sym(token)),
-                table_find(n->arguments, sym(text)),
-                table_find(n->arguments, sym(index)),
-                table_find(n->arguments, sym(by)),
-                true, true);
+    *e = cont(bk->h, do_split,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n, sym(token)),
+              blookupv(b, n, sym(text)),
+              blookupv(b, n, sym(index)),
+              blookupv(b, n, sym(by)),
+              true, true);
 }
 
-static execf build_split(block bk, node n)
+static void build_split(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_split,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                table_find(n->arguments, sym(token)),
-                table_find(n->arguments, sym(text)),
-                table_find(n->arguments, sym(index)),
-                table_find(n->arguments, sym(by)),
-                false, false);
+    *e = cont(bk->h, do_split,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n, sym(token)),
+              blookupv(b, n, sym(text)),
+              blookupv(b, n, sym(index)),
+              blookupv(b, n, sym(by)),
+              false, false);
 }
 
 
-static CONTINUATION_5_4(do_length, block, perf, execf, value,  value, heap, perf, operator, value *);
-static void do_length(block bk, perf p, execf n, value dest, value src, heap h, perf pp, operator op, value *r)
+static CONTINUATION_5_3(do_length, block, perf, execf, value,  value, heap, perf, value *);
+static void do_length(block bk, perf p, execf n, value dest, value src, heap h, perf pp, value *r)
 {
-    start_perf(p, op);
-    if (op == op_insert) {
-        value str = lookup(r, src);
-        if((type_of(str) == estring_space)) {
-            store(r, dest, box_float(((estring)str)->length));
-            apply(n, h, p, op, r);
-        } else {
-            exec_error(bk->ev, "Attempt to get length of non-string", str);                                           \
-        }
+    start_perf(p);
+    value str = lookup(r, src);
+    // this probably needs implicit coersion because
+    if((type_of(str) == estring_space)) {
+        store(r, dest, box_float(((estring)str)->length));
+        apply(n, h, p, r);
     } else {
-        apply(n, h, p, op, r);
+        exec_error(bk->ev, "Attempt to get length of non-string", str); \
     }
+    apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
 
-static execf build_length(block bk, node n)
+static execf build_length(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    return cont(bk->h, do_length,
-                bk,
-                register_perf(bk->ev, n),
-                resolve_cfg(bk, n, 0),
-                table_find(n->arguments, sym(return)),
-                table_find(n->arguments, sym(string)));
+    *e = cont(bk->h, do_length,
+              bk,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n, sym(return)),
+              blookupv(b, n, sym(string)));
 }
 
 void register_string_builders(table builders)

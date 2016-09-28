@@ -29,22 +29,10 @@ static inline int toreg(value k)
 
 #define allocation_space 0xa0000000000ull
 
-typedef struct type {
-    void (*print)(buffer, void *, heap);
-    u64 (*hash)(void *);
-    // serialization length
-    u64 (*length)(void *);
-    int (*serialize)(buffer b, void *);
-    void *(*deserialize)(buffer b);
-} *type;
-
 typedef struct values_diff {
   vector insert;
   vector remove;
 } *values_diff;
-
-
-
 
 static inline u64 type_of (void *x)
 {
