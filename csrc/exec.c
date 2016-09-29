@@ -113,7 +113,9 @@ static void build_sub(block bk, bag b, uuid n, execf *e, flushf *f)
     s->ids_cache = create_value_vector_table(s->h);
     s->projection = blookup_vector(bk->h, b, n, sym(projection));
     s->v = allocate_vector(s->h, vector_length(s->projection));
-    s->leg = resolve_cfg(bk, n, 1);
+    // xxx - fix build
+    value leg = blookupv(b, n, sym(leg));
+    s->leg = resolve_cfg(bk, leg);
     s->outputs = blookup_vector(bk->h, b, n, sym(provides));
     s->resreg =  blookupv(b, n, sym(pass));
     s->ids = blookup_vector(bk->h, b, n, sym(ids));
@@ -242,21 +244,24 @@ static void build_move(block bk, bag b, uuid n, execf *e, flushf *f)
 }
 
 
-static CONTINUATION_3_0(do_merge, execf, int, u32 *);
+static CONTINUATION_3_0(do_merge_flush, flushf, int, u32 *);
 static void do_merge_flush(flushf n, int count, u32 *total)
 {
     *total = *total +1;
     if (*total == count) {
+        apply(n);
         *total = 0;
-    } else return;
+    } 
 }
 
 static execf build_merge(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     u32 *c = allocate(bk->h, sizeof(u32));
     *c = 0;
-    *f = cont(bk->h, do_merge, resolve_cfg(bk, n, 0),
-              (int)*(double *)lookupv(b, n, sym(arms)),
+    *f = cont(bk->h,
+              do_merge_flush, 
+              *f,
+              (int)*(double *)blookupv(b, n, sym(arms)),
               c);
 }
 
@@ -382,23 +387,26 @@ static execf build_random(block bk, bag b, uuid n, execf *e, flushf *f)
               seed);
 }
 
-static CONTINUATION_3_3(do_fork, perf, int, execf *, heap, perf, value *) ;
-static void do_fork(perf p, int legs, execf *b, heap h, perf pp, value *r)
+static CONTINUATION_2_3(do_fork, 
+                        perf, vector,
+                        heap, perf, value *);
+static void do_fork(perf p, vector legs, heap h, perf pp, value *r)
 {
     start_perf(p);
-    for (int i =0; i<legs ;i ++) apply(b[i], h, p, r);
+    vector_foreach(legs, i)
+        apply((execf)i, h, p, r);
     stop_perf(p, pp);
 }
 
 static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector arms = blookup_vector(bk, b n, sym(arms));
+    vector arms = blookup_vector(bk->h, b, n, sym(arms));
     int count = vector_length(arms);
-    execf *a = allocate(bk->h, sizeof(execf) * count);
-
-    for (int i=0; i < count; i++)
-        a[i] = resolve_cfg(bk, n, i);
-    *e = cont(bk->h, do_fork, register_perf(bk->ev, n), count, a);
+    vector a = allocate_vector(bk->h, count);
+    
+    vector_foreach(arms, i)
+        vector_insert(a, resolve_cfg(bk, n));
+    *e = cont(bk->h, do_fork, register_perf(bk->ev, n), a);
 }
 
 static CONTINUATION_3_3(do_trace, execf, table, uuid, heap, perf, value *);
@@ -418,9 +426,9 @@ static void do_trace(execf next, table arguments, uuid id, heap h, perf pp, valu
 
 static void build_trace(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    table arguments = create_table(bk->h);
+    table arguments = create_value_table(bk->h);
     // should exclude some
-    edb_foreach_av(b, n, a, v, c)
+    edb_foreach_av((edb)b, n, a, v, c)
         table_set(arguments, a, v);
     *e = cont(bk->h,
               do_trace,
@@ -466,7 +474,6 @@ table builders_table()
 
 static void print_dot_internal(buffer dest, table visited, table counters, bag b, uuid n)
 {
-
     if (!table_find(visited, n)) {
         vector arms = blookup_vector(transient, b, n, sym(arms));
         buffer description = allocate_string(dest->h);
@@ -486,17 +493,17 @@ static void print_dot_internal(buffer dest, table visited, table counters, bag b
         table_set(visited, n, (void *)1);
         vector_foreach(arms, i) {
             bprintf(dest, "%v -> %v;\n", n, i);
-            print_dot_internal(dest, visited, counters, i);
+            print_dot_internal(dest, visited, counters, b, i);
         }
     }
 }
 
-string print_dot(heap h, block bk, table counters)
+string print_dot(heap h, bag b, uuid i, table counters)
 {
     table visited = allocate_table(h, key_from_pointer, compare_pointer);
     string dest = allocate_string(h);
-    bprintf(dest, "digraph %v {\n", bk->name);
-    print_dot_internal(dest, visited, counters, bk->start);
+    bprintf(dest, "digraph %v {\n", blookupv(b, i, sym(name)));
+    print_dot_internal(dest, visited, counters, b, i);
     bprintf(dest, "}\n");
     return dest;
 }
@@ -513,8 +520,8 @@ static void force_node(block bk, bag b, uuid n)
         //            force_node(bk, i);
         execf e;
         flushf f;
-        
-        *x = n->builder(bk, b, n, &e, &f);
+        buildf bf = table_find(builders, blookupv(b, n, sym(type)));
+        bf(bk, b, n, &e, &f);
     }
 }
 
@@ -529,12 +536,12 @@ block build(evaluation ev, bag b, uuid root)
     heap h = allocate_rolling(pages, sstring("build"));
     block bk = allocate(h, sizeof(struct block));
     bk->ev = ev;
-    bk->regs = (int)(double *)lookupv(b, root, sym(regs));
+    bk->regs = (int)*(double *)blookupv(b, root, sym(regs));
     bk->h = h;
-    bk->name = lookupv(b, root, sym(name));
+    bk->name = blookupv(b, root, sym(name));
     // this is only used during building
     bk->nmap = allocate_table(bk->h, key_from_pointer, compare_pointer);
-    bk->start = lookupv(b, root, sym(regs));
+    bk->start = blookupv(b, root, sym(regs));
     force_node(bk, b, bk->start);
     bk->head = *(execf *)table_find(bk->nmap, bk->start);
     return bk;

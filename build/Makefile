@@ -51,11 +51,11 @@ UNIX_H = unix_internal.h unix.h
 CORE = buffer.o table.o vector.o format.o rolling.o string.o pqueue.o timer.o field.o
 CORE_H = bswap.h pqueue.h vector.h buffer.h heap.h timer.h continuation.h core.h string.h table.h
 EXEC = exec_expression.o exec_edb.o exec_string.o exec_aggregate.o exec.o
-RUNTIME = edb.o init.o uuid.o estring.o types.o luanne.o json_request.o runner.o path.o\
-	  process_bag.o bag_bag.o serialize.o postgres.o debug_bag.o envbag.o thread.o log.o $(EXEC) 
+RUNTIME = edb.o init.o uuid.o estring.o types.o path.o serialize.o thread.o log.o 
+EVE = process_bag.o bag_bag.o debug_bag.o runner.o envbag.o json_request.o staticdb.o luanne.o postgres.o $(EXEC) 
 RUNTIME_H = luanne.h runtime.h estring.h number.h types.h exec.h edb.h multibag.h
 HTTP = server.o websocket.o base64.o sha1.o json.o client.o http.o hmac_sha2.o sha256.o md5.o
-DNS = dns.o
+DNS = dns.o dnsbag.o
 HTTP_H = http.h
 CONTENT = index.html system.js microReact.js codemirror.js codemirror.css commonmark.js\
           uuid.js client.js renderer.js editor.js db.js
@@ -85,8 +85,8 @@ bundle.o: bundle.c
 path.c: Makefile
 	echo 'char *pathroot = "$(BUILD)/../";' > path.c
 
-package: package.o path.o
-	$(CC) $^ -o $@
+package: package.o path.o $(RUNTIME) $(CORE) $(UNIX)
+	$(CC) $^ -lm -lpthread -o $@
 
 staticdb: $(DB_INCLUDES) package $(CONTENT) manifest
 	package < manifest > staticdb
@@ -105,7 +105,7 @@ staticdb.o: staticdb
 # the executable out of the way for the moment
 #macosx
 #linux  -Wl,-E
-eve: $(CORE) $(UNIX) $(COMPILER) $(UTF) $(LUAPOWER) $(HTTP) $(RUNTIME) $(DNS) staticdb.o eve.o
+eve: $(CORE) $(UNIX) $(COMPILER) $(UTF) $(LUAPOWER) $(HTTP) $(RUNTIME) $(DNS) $(EVE) eve.o
 	$(CC) $^ $(LIBLUAJIT) $(LINK) -lm -ldl  -o $@
 
 clean:

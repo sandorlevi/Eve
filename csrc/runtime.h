@@ -115,12 +115,12 @@ void close_evaluation(evaluation);
 
 extern char *pathroot;
 
-vector compile_eve(heap h, buffer b, boolean tracing, bag *compiler_bag);
+bag compile_eve(heap h, buffer b, boolean tracing);
 
 evaluation build_evaluation(heap h, estring name,
                             table scopes, table persisted,
                             evaluation_result e, error_handler error,
-                            vector implications);
+                            bag compiled);
 
 void run_solver(evaluation s);
 void inject_event(evaluation, bag);

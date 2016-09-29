@@ -94,8 +94,8 @@ static void start_http_server(buffer source)
     table_set(scopes, sym(static), sid);
 
     heap hc = allocate_rolling(pages, sstring("eval"));
-    vector n = compile_eve(h, source, false, &compiler_bag);
-    evaluation ev = build_evaluation(h, sym(http-server), scopes, persisted, ignore, cont(h, handle_error_terminal), n);
+    bag b = compile_eve(h, source, false);
+    evaluation ev = build_evaluation(h, sym(http-server), scopes, persisted, ignore, cont(h, handle_error_terminal), b);
     create_http_server(create_station(0, port), ev, pb);
     prf("\n----------------------------------------------\n\nEve started. Running at http://localhost:%d\n\n",port);
 }

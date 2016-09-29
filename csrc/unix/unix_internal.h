@@ -47,12 +47,12 @@ static void read_nonblocking_desc(heap h,
 
 // need to keep this guy around, bleeding out conts here...looks like its time for myself
 static CONTINUATION_3_0(rereg, heap, descriptor, buffer_handler);
-static void rereg(heap h, descriptor d, buffer_handler bh)
+static inline void rereg(heap h, descriptor d, buffer_handler bh)
 {
     register_read_handler(tcontext()->s, d, cont(h, read_nonblocking_desc, h, d, bh));
 }
 
-static void read_nonblocking_desc(heap h,
+static inline void read_nonblocking_desc(heap h,
                                   descriptor d,
                                   buffer_handler bh)
 {
@@ -68,7 +68,7 @@ static void read_nonblocking_desc(heap h,
 
 void select_timer_block(selector, ticks);
 
-static station digest_sockaddrin(heap h, struct sockaddr_in *a)
+static inline station digest_sockaddrin(heap h, struct sockaddr_in *a)
 {
     u32 t;
     unsigned char *new = allocate(h, 6);
@@ -77,7 +77,7 @@ static station digest_sockaddrin(heap h, struct sockaddr_in *a)
     return(new);
 }
 
-static int encode_sockaddrin(struct sockaddr_in *out, station in)
+static inline int encode_sockaddrin(struct sockaddr_in *out, station in)
 {
     memset (out, 0, sizeof(struct sockaddr_in));
 #ifdef HAVE_SOCKADDR_SA_LEN

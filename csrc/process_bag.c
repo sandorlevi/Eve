@@ -89,9 +89,9 @@ void process_bag_commit(process_bag pb, edb s)
             estring source = v;
             bag compiler_bag;
             uuid compiler_id = generate_uuid();
-            vector n = compile_eve(p->h,
-                                   alloca_wrap_buffer(source->body, source->length),
-                                   false, &compiler_bag);
+            bag n = compile_eve(p->h,
+                                alloca_wrap_buffer(source->body, source->length),
+                                false);
             table_set(p->scopes, sym(compiler), compiler_id);
             table_set(p->persisted, compiler_id, compiler_bag);
 

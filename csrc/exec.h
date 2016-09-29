@@ -1,4 +1,4 @@
-typedef execf (*buildf)(block, bag b, uuid e, execf *, flushf *);
+typedef void (*buildf)(block, bag, uuid, execf *, flushf *);
 
 static void exec_error(evaluation e, char *format, ...)
 {

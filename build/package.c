@@ -83,7 +83,7 @@ static void write_term(char *x, int length)
     }
 
     if (((start >= '0') && (start <= '9')) || (start == '-')) {
-        double d = parse_float(x+1, length -1);
+        double d = parse_float(alloca_wrap_buffer(x+1, length -1));
         bwrite(float64_prefix);
         write(1, &d, sizeof(double));
         return;

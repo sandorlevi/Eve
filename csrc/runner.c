@@ -426,7 +426,7 @@ evaluation build_evaluation(heap h,
                             multibag t_input,
                             evaluation_result r,
                             error_handler error,
-                            vector implications)
+                            bag compiled)
 {
     evaluation ev = allocate(h, sizeof(struct evaluation));
     ev->h = h;
@@ -463,10 +463,9 @@ evaluation build_evaluation(heap h,
     table_set(ev->scopes, sym(debug), debug_bag_id);
     table_set(ev->t_input, debug_bag_id, init_debug_bag(ev));
 
-    // xxx - compiler output reflecton
-    vector_foreach(implications, i) {
+    edb_foreach_ev((edb)compiled, e, sym(tag), block, c) {
         // xxx - shouldn't build take the termination?
-        // vector_insert(ev->blocks, build(ev, i));
+        vector_insert(ev->blocks, build(ev, compiled, e));
     }
 
     table_foreach(ev->scopes, name, id) {

@@ -22,14 +22,13 @@ static void sort_flush(pqueue q, value out, heap h, execf n, perf p, value *r)
 // just generate a comparator over r
 static CONTINUATION_7_3(do_sort,
                         execf, perf,
-                        table *, value, value, vector,vector,
+                        table *, value, value, vector, vector,
                         heap, perf, value *);
 static void do_sort(execf n, perf p,
                     table *targets, value key, value out, vector proj, vector pk,
                     heap h, perf pp, value *r)
 {
     start_perf(p);
-
     extract(pk, proj, r);
     pqueue x;
     if (!(x = table_find(*targets, pk))) {
@@ -121,48 +120,40 @@ static double op_sum(double a, double b)
     return a+b;
 }
 
-static CONTINUATION_2_3(simple_agg_flush, value, value, heap, perf, value);
+static CONTINUATION_2_3(simple_agg_flush, value, value, heap, perf, value *);
 static void simple_agg_flush(value x, value dst, heap h, perf pp, value *r)
 {
     store(r, dst, box_float(*(double *)x));
 }
 
-static CONTINUATION_7_3(do_sum, execf, perf, dubop,  double *, value, value, heap, perf, value *);
-static void do_simple_agg(execf n, perf p, dubop op, double *x, value src, 
+static CONTINUATION_3_3(do_simple_agg, dubop,  double *, value,
+                        heap, perf, value *);
+static void do_simple_agg(dubop op, double *x, value src, 
                           heap h, perf pp, value *r)
 {
-    // this can be any op, not necesarily double, max string anyone?
-    start_perf(p);
-    *x = dubop(*x, *(double *)lookup(r, src))
-    stop_perf(p, pp);
+    *x = op(*x, *(double *)lookup(r, src));
 }
 
-static void build_simple_agg(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_simple_agg(heap h, bag b, uuid n, execf *e, execf *f)
 {
     vector groupings = blookupv(b, n,sym(groupings));
     dubop op;
-    double *x = allocate((*targets)->h, sizeof(double *));
-
-    if (!groupings) groupings = allocate_vector(bk->h, 0);
-    vector pk = allocate_vector(bk->h, vector_length(groupings));
-    table *targets = allocate(bk->h, sizeof(table));
-    *targets = create_value_vector_table(bk->h);
+    double *x = allocate(h, sizeof(double *));
     value type = blookupv(b, n, sym(type));
 
     if (type == sym(max)) op = op_max;
     if (type == sym(min)) op = op_min;
     if (type == sym(sum)) op = op_sum;
 
-    return cont(bk->h,
-                do_simple_agg,
-                op,
-                cfg_next(bk, b, n),
-                register_perf(bk->ev, n),
-                targets,
-                groupings,
-                blookupv(b, n,sym(value)),
-                blookupv(b, n,sym(return)),
-                pk);
+    *e = cont(h,
+              do_simple_agg,
+              op,
+              x,
+              blookupv(b, n, sym(value)));
+    *f = cont(h, 
+              simple_agg_flush, 
+              x,
+              blookupv(b, n, sym(return)));
 }
 
 
@@ -202,9 +193,6 @@ static void do_subagg_tail(perf p, execf next, value pass,
 
 static void build_subagg_tail(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    store(r, sag->pass, sag);
-    apply(next, h, p, r);
-
     vector groupings = blookup_vector(bk->h, b, n,sym(groupings));
     // apparently this is allowed to be empty?
     if (!groupings) groupings = allocate_vector(bk->h,0);
@@ -212,12 +200,12 @@ static void build_subagg_tail(block bk, bag b, uuid n, execf *e, flushf *f)
     *group_inputs = create_value_vector_table(bk->h);
 
     vector v = allocate_vector(bk->h, groupings?vector_length(groupings):0);
-    return cont(bk->h,
-                do_subagg_tail,
-                register_perf(bk->ev, n),
-                cfg_next(bk, b, n),
-                blookupv(b, n,sym(pass)),
-                blookupv(b, n,sym(provides)));
+    *e = cont(bk->h,
+              do_subagg_tail,
+              register_perf(bk->ev, n),
+              cfg_next(bk, b, n),
+              blookupv(b, n,sym(pass)),
+              blookupv(b, n,sym(provides)));
 }
 
 static void subagg_flush(subagg sag, flushf next)
@@ -290,49 +278,64 @@ static void build_subagg(block bk, bag b, uuid n, execf *e, flushf *f)
               sag);
 }
 
-static void flush_grouping(table *g, execf next, vector pk, vector groupings, 
-                           heap h, perf p, value *r)
+static void flush_grouping(heap h,
+                           table *groups, 
+                           vector grouping, 
+                           int regs, 
+                           vector pk,
+                           flushf f)
 {
-    // xxx - manage r and perf
+    value *r = allocate(h, regs*sizeof(value));
+    execf x;
+    // wtf are you?
+    struct perf p;
+    if (!(x = table_find(*groups, pk))) {
+        // x needs to contain flusho
+        table_foreach(*groups, pk, x) {
+            // allocate r
+            copyout(r, grouping, pk);
+            apply((execf)x, h, &p, r);
+        }
+        apply(f);
+    }
+}
+
+typedef closure(aggbuilder, heap, execf *);
+
+static CONTINUATION_7_3(exec_grouping,
+                        heap, aggbuilder, execf, perf, table*, vector, vector,
+                        heap, perf, value *);
+static void exec_grouping(heap bh, aggbuilder b, execf n, perf p, table *groups, vector groupings, vector pk,
+                           heap h, perf pp, value *r)
+{
+    // start perf
     extract(pk, groupings, r);
-    pqueue x;
+    execf x;
 
     if (!*groups)
-        *groups = create_value_vector_table(h);
+        *groups = create_value_vector_table(bh);
 
     if (!(x = table_find(*groups, pk))) {
         vector new_pk = allocate_vector(h, vector_length(groupings));
         extract(new_pk, groupings, r);
-        x = allocate_pqueue(h, order_join_keys);
+        apply(b, h, &x);
         table_set(*groups, new_pk, x);
     }
-
+    apply(x, h, p, r);
+    apply(n, h, p, r);
 }
 
-typedef void (*aggbuilder)(value v, value out);
-
-static execf exec_grouping(aggbuilder b, r, table *g
-                           heap, perf p, value *r)
+static void build_grouping(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    extract(pk, groupings, r);
-    pqueue x;
-
-    if (!*groups)
-        *groups = create_value_vector_table(h);
-
-    if (!(x = table_find(*groups, pk))) {
-        vector new_pk = allocate_vector(h, vector_length(groupings));
-        extract(new_pk, groupings, r);
-        x = allocate_pqueue(h, order_join_keys);
-        table_set(*groups, new_pk, x);
-    }
-}
-
-static void build_aggregate(block bk, bag b, uuid n, execf *e, flushf *f)
-{
-    aggbuilder ba = table_find(aggbuilders, n->type);
-    table *x = allocate(bk->h, sizeof(struct table));
-    *e = cont(bk->h, exec_grouping, ba);
+    aggbuilder ba = table_find(aggbuilders, blookupv(b, n, sym(type)));
+    vector groupings = blookup_vector(bk->h, b, n, sym(groupings));
+    table *groups = allocate(bk->h, sizeof(struct table));
+    *groups = 0;
+    *e = cont(bk->h,exec_grouping, 
+              bk->h, ba, cfg_next(bk, b, n), 
+              register_perf(bk->ev, n), groups,
+              groupings,
+              allocate_vector(bk->h, vector_length(groupings)));
 }
 
 void register_aggregate_builders(table builders)
@@ -340,9 +343,9 @@ void register_aggregate_builders(table builders)
     aggbuilders = create_value_table(init);
     table_set(builders, intern_cstring("subagg"), build_subagg);
     table_set(builders, intern_cstring("subaggtail"), build_subagg_tail);
-    table_set(builders, intern_cstring("sum"), build_aggregate);
-    table_set(builders, intern_cstring("join"), build_aggregate);
-    table_set(builders, intern_cstring("sort"), build_aggregate);
+    table_set(builders, intern_cstring("sum"), build_grouping);
+    table_set(builders, intern_cstring("join"), build_grouping);
+    table_set(builders, intern_cstring("sort"), build_grouping);
     
     // aggbuilders get called on a case by case basis by 
     // the grouper

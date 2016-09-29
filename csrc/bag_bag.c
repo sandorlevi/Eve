@@ -1,19 +1,18 @@
 #include <runtime.h>
 
-// @FIXME: I don't know where this belongs but it is probably not here?
-// @FIXME: Need to merge this compiler bag into the compiler_bag of the evaluation.
 void compile_into_bag(evaluation ev, bag b, estring code) {
     heap h = ev->working;
-    buffer codebuf = wrap_buffer(h, code->body, code->length);
+    buffer codebuf = alloca_wrap_buffer(code->body, code->length);
     bag compiler_bag = (bag)create_edb(h, 0);
-    vector blocks = compile_eve(ev->h, codebuf, false, &compiler_bag);
-    vector_foreach(blocks, block) {
-        vector_insert(b->blocks, block);
-    }
+    bag compiled = compile_eve(ev->h, codebuf, false);
 
-    table_foreach(b->block_listeners, listener, _) {
-        apply((bag_block_handler)listener, b, blocks, 0);
-    }
+    //    vector_foreach(blocks, block) {
+    //        vector_insert(b->blocks, block);
+    //    }
+
+    //    table_foreach(b->block_listeners, listener, _) {
+    //        apply((bag_block_handler)listener, b, blocks, 0);
+    //    }
 }
 
 static CONTINUATION_1_5(bagbag_insert, evaluation, value, value, value, multiplicity, uuid);
