@@ -409,34 +409,6 @@ static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
     *e = cont(bk->h, do_fork, register_perf(bk->ev, n), a);
 }
 
-static CONTINUATION_3_3(do_trace, execf, table, uuid, heap, perf, value *);
-static void do_trace(execf next, table arguments, uuid id, heap h, perf pp, value *r)
-{
-    prf("%010r %v",
-        table_find(arguments, sym(name)),
-        id);
-    table_foreach(arguments, k, v) {
-        // xxx - what is name doing in there anyways?
-        if ((k != sym(name)) && (k != sym(pass)))
-            prf (" %r=%v ", k, lookup(r, v));
-    }
-    prf("\n");
-    apply(next, h, pp, r);
-}
-
-static void build_trace(block bk, bag b, uuid n, execf *e, flushf *f)
-{
-    table arguments = create_value_table(bk->h);
-    // should exclude some
-    edb_foreach_av((edb)b, n, a, v, c)
-        table_set(arguments, a, v);
-    *e = cont(bk->h,
-              do_trace,
-              cfg_next(bk, b, n),
-              arguments,
-              n);
-}
-
 static table builders;
 
 extern void register_exec_expression(table builders);
@@ -450,10 +422,8 @@ table builders_table()
     if (!builders) {
         builders = allocate_table(init, key_from_pointer, compare_pointer);
         table_set(builders, intern_cstring("fork"), build_fork);
-        table_set(builders, intern_cstring("trace"), build_trace);
         table_set(builders, intern_cstring("sub"), build_sub);
         table_set(builders, intern_cstring("subtail"), build_sub_tail);
-
         table_set(builders, intern_cstring("terminal"), build_terminal);
         table_set(builders, intern_cstring("choose"), build_choose);
         table_set(builders, intern_cstring("choosetail"), build_choose_tail);

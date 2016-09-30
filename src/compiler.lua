@@ -1365,7 +1365,7 @@ function compileExec(contents, tracing)
     -- @NOTE: We cannot allow dead DGs to still try and run, they may be missing filtering hunks and fire all sorts of missiles
     if not dependencyGraph.ignore then
       dependencyGraph:addToBag(context.compilerBag)
-      head, regs = build.build(queryGraph, tracing, context)
+       build.build(queryGraph, db)
       set[#set+1] = {head = head, regs = regs, name = queryGraph.name}
     end
   end

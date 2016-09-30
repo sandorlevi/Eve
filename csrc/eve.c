@@ -233,7 +233,7 @@ int main(int argc, char **argv)
 
     // depends on uuid layout, package.c, and other fragilizites
     unsigned char fixed_uuid[12] = {0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
-    estring static_server = lookupv((edb)static_bag, intern_uuid(fixed_uuid), sym(server));
+    estring static_server = blookupv(static_bag, intern_uuid(fixed_uuid), sym(server));
     if (default_behaviour)
         start_http_server(alloca_wrap_buffer(static_server->body, static_server->length));
 

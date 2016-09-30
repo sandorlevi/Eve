@@ -16,29 +16,25 @@ function shallowcopy(orig)
     return copy
 end
 
-function cnode(n, name, arms, args, context, tracing)
+function cnode(n, name, next, arms, args, db)
    -- create an edge between the c node and the parse node
-   local id = util.generateId()
-   context.downEdges[#context.downEdges + 1] = {n.id, id}
-   local c = build_node(name, arms, args, id)
-
-   if tracing then
-      local targs = {name = name}
-      for k, v in pairs(args) do
-         if type(v) == "table" then
-               for k0, v0 in pairs(v) do
-                   targs[k..k0] = v0
-                end
-         else
-             targs[k] = v
-         end
-      end
-      -- create an edge between the c node and the parse node
-      local id = util.generateId()
-      context.downEdges[#context.downEdges + 1] = {n.id, id}
-      c = build_node("trace", {c}, targs, id)
+   local id = suuid()
+   for a, v in ipairs(args) do           
+      insert_edb(db, id, a, v)
    end
-   return c
+   return id
+end
+
+function flat_print_table(t)
+   if type(t) == "table" then
+     local result = ""
+     for k, v in pairs(t) do
+        if not (k == nil) then result = result .. " " .. tostring(k) .. ":" end
+        if not (v == nil) then result = result .. tostring(v) end
+     end
+     return result
+   end
+   return tostring(t)
 end
 
 function recurse_print_table(t)
@@ -151,9 +147,14 @@ end
 
 head_to_tail_counter = 0
 
-function allocate_temp(context, node)
+function allocate_temp(node)
   head_to_tail_counter =  head_to_tail_counter + 1
-  local variable = setmetatable(makeNode(context, "variable", node, {generated = true, name = "temp_" .. head_to_tail_counter}), DefaultNodeMeta)
+  local variable = setmetatable({type = "variable",
+                                 line = node.line,
+                                 offset = node.offset,
+                                 id = util.generateId()}, DefaultNodeMeta)
+  variable.name= "temp_" .. head_to_tail_counter
+  variable.generated = true
   node.query.variables[#node.query.variables + 1] = variable
   return variable
 end
@@ -231,35 +232,35 @@ end
 
 
 
-function translate_subagg(n, bound, down, context, tracing)
-  local pass = allocate_temp(context, n)
+function translate_subagg(n, bound, down, db)
+  local pass = allocate_temp(n)
   bound[pass] = true
 
   function tail (bound)
-       env, rest = down(bound)
-       return env, cnode(n, "subaggtail", {rest},
+       local env, rest = down(bound)
+       return env, cnode(n, "subaggtail", rest, {}, 
                           {groupings = set_to_read_array(n, env, n.groupings or {}),
                            provides = set_to_read_array(n, env, n.provides),
                            pass = read_lookup(n, env, pass)},
-                     context, tracing)
+                     db)
   end
 
-  env, rest = walk(n.nodes, nil, bound, tail, context, tracing)
+  local env, rest = walk(n.nodes, nil, bound, tail, db)
 
 
-  c = cnode(n, "subagg", {rest},
+  c = cnode(n, "subagg", rest, {},
                    {projection = set_to_read_array(n, env, n.projection),
                     groupings = set_to_read_array(n, env, n.groupings or {}),
                     pass = write_lookup(n, env, pass)},
-                 context, tracing)
+                 db)
 
   return env, c
 end
 
-function translate_subproject(n, bound, down, context, tracing)
+function translate_subproject(n, bound, down, db)
    local t = n.nodes
    local env, rest, fill, c
-   local pass = allocate_temp(context, n)
+   local pass = allocate_temp(n)
    local db = shallowcopy(bound)
    bound[pass] = true
 
@@ -276,14 +277,14 @@ function translate_subproject(n, bound, down, context, tracing)
    local saveids = env.ids
    env.ids = {}
    function tail (bound)
-     return env, cnode(n, "subtail", {},
+     return env, cnode(n, "subtail",  nil, {},
                              {provides=set_to_read_array(n, env, provides),
                              pass=read_lookup(n, env, pass)},
-                 context, tracing)
+                 db)
 
    end
 
-   env, fill = walk(n.nodes, nil, bound, tail, context, tracing)
+   env, fill = walk(n.nodes, nil, bound, tail, db)
    if #n.nodes == 0 then
      -- with no nodes in the subproject and no ids in need of generation, we just omit it entirely.
      -- When the compiler is more intelligent and its second pass is less hacked together, we can move this there.
@@ -299,9 +300,7 @@ function translate_subproject(n, bound, down, context, tracing)
      end
    end
 
-
-
-   c = cnode(n, "sub", {rest, fill},
+   c = cnode(n, "sub", rest, {fill},
               {projection = set_to_read_array(n, env, n.projection),
                provides = set_to_read_array(n, env, provides),
                pass = write_lookup(n, env, pass),
@@ -314,7 +313,7 @@ function translate_subproject(n, bound, down, context, tracing)
    return env, c
 end
 
-function translate_object(n, bound, down, context, tracing)
+function translate_object(n, bound, down, db)
    local e = n.entity
    local a = n.attribute
    local v = n.value
@@ -347,17 +346,17 @@ function translate_object(n, bound, down, context, tracing)
         scopes[#scopes + 1] = k
    end
 
-   return env, cnode(n, "scan", {c},
+   return env, cnode(n, "scan", c, {},
                   {sig = sig,
                    scopes = scopes,
                    e = ef(n, env, e),
                    a = af(n, env, a),
                    v = vf(n, env, v)},
-                context, tracing)
+                db)
  end
 
 
-function translate_mutate(n, bound, down, context, tracing)
+function translate_mutate(n, bound, down, db)
    local e = n.entity
    local a = n.attribute
    local v = n.value
@@ -374,13 +373,13 @@ function translate_mutate(n, bound, down, context, tracing)
         scopes[#scopes + 1] = k
    end
 
-   c = cnode(n, operator, {c},
+   c = cnode(n, operator, c, {},
                         {scopes = scopes,
                          mutateType = n.mutateType,
                          e = read_lookup(n, env,e),
                          a = read_lookup(n, env,a),
                          v = read_lookup(n, env,v)},
-               context, tracing)
+               db)
 
    if gen then
      env.ids[e] = read_lookup(n, env, e)
@@ -388,18 +387,18 @@ function translate_mutate(n, bound, down, context, tracing)
    return env, c
 end
 
-function translate_not(n, bound, down, context, tracing)
+function translate_not(n, bound, down, db)
    local env
    local arms = {}
-   local flag = allocate_temp(context, n)
+   local flag = allocate_temp(n)
    tail_bound = shallowcopy(bound)
 
    local env, c = down(tail_bound)
    local orig_perm = shallowcopy(env.permanent)
-   local bot = cnode(n, "choosetail",
+   local bot = cnode(n, "choosetail", nil,
                           {},
                           {pass = read_lookup(n, env, flag)},
-                          context, tracing)
+                          db)
 
    local arm_bottom = function (bound)
         return env, bot
@@ -408,16 +407,16 @@ function translate_not(n, bound, down, context, tracing)
    for n, _ in pairs(env.registers) do
          env.permanent[n] = true
    end
-   env, arm = walk(n.queries[1].unpacked, nil, shallowcopy(bound), arm_bottom, context, tracing)
-   return env, cnode(n, "not", {c, arm}, {pass = read_lookup(n, env, flag)}, context, tracing)
+   env, arm = walk(n.queries[1].unpacked, nil, shallowcopy(bound), arm_bottom, db)
+   return env, cnode(n, "not", c, {arm}, {pass = read_lookup(n, env, flag)}, db)
 end
 
 
 -- looks alot like union
-function translate_choose(n, bound, down, context, tracing)
+function translate_choose(n, bound, down, db)
    local env
    local arms = {}
-   local flag = allocate_temp(context, n)
+   local flag = allocate_temp(n)
 
    local tail_bound = shallowcopy(bound)
    for _, v in pairs(n.outputs) do
@@ -430,7 +429,7 @@ function translate_choose(n, bound, down, context, tracing)
    arms[1] = c
 
    local bot = cnode(n, "choosetail",
-                          {c},
+                          c, {},
                           {pass = read_lookup(n, env, flag)},
                           context,
                           tracing)
@@ -446,15 +445,15 @@ function translate_choose(n, bound, down, context, tracing)
    end
 
    for _, v in pairs(n.queries) do
-        env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, context, tracing)
+        env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, db)
         arms[#arms+1] = c2
    end
 
    env.permanent = orig_perm
-   return env, cnode(n, "choose", arms, {pass = read_lookup(n, env, flag)}, context, tracing)
+   return env, cnode(n, "choose", nil, arms, {pass = read_lookup(n, env, flag)}, db)
 end
 
-function translate_union(n, bound, down, context, tracing)
+function translate_union(n, bound, down, db)
    local heads
    local c2
    local arms = {}
@@ -477,16 +476,16 @@ function translate_union(n, bound, down, context, tracing)
 
    for _, v in pairs(n.queries) do
       local c2
-      env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, context, tracing)
+      env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, db)
       arms[#arms+1] = c2
    end
    env.permanent = orig_perm
 
-   return env, cnode(n, "fork", arms, {}, context, tracing)
+   return env, cnode(n, "fork", nil, arms, {}, db)
 end
 
 
-function translate_expression(n, bound, down, context, tracing)
+function translate_expression(n, bound, down, db)
   local signature = db.getSignature(n.bindings, bound)
   local schema = db.getSchema(n.operator, signature)
   if not schema then
@@ -527,10 +526,10 @@ function translate_expression(n, bound, down, context, tracing)
        nodeArgs.groupings = groupings
    end
 
-   return env, cnode(n, schema.name or n.operator, {c}, nodeArgs, context, tracing)
+   return env, cnode(n, schema.name or n.operator, c, {}, nodeArgs, db)
 end
 
-function walk(graph, key, bound, tail, context, tracing)
+function walk(graph, key, bound, tail, db)
    local d, down
    local nk = next(graph, key)
    if not nk then
@@ -539,34 +538,34 @@ function walk(graph, key, bound, tail, context, tracing)
 
    local n = graph[nk]
    d = function (bound)
-                return walk(graph, nk, bound, tail, context, tracing)
+                return walk(graph, nk, bound, tail, db)
            end
 
    if (n.type == "union") then
-      return translate_union(n, bound, d, context, tracing)
+      return translate_union(n, bound, d, db)
    end
    if (n.type == "mutate") then
-      return translate_mutate(n, bound, d, context, tracing)
+      return translate_mutate(n, bound, d, db)
    end
    if (n.type == "object") then
-      return translate_object(n, bound, d, context, tracing)
+      return translate_object(n, bound, d, db)
    end
    if (n.type == "subproject") then
      if n.kind == "aggregate" then
-       return translate_subagg(n, bound, d, context, tracing)
+       return translate_subagg(n, bound, d, db)
      else
-       return translate_subproject(n, bound, d, context, tracing)
+       return translate_subproject(n, bound, d, db)
      end
    end
    if (n.type == "choose") then
-      return translate_choose(n, bound, d, context, tracing)
+      return translate_choose(n, bound, d, db)
    end
    if (n.type == "expression") then
-      return translate_expression(n, bound, d, context, tracing)
+      return translate_expression(n, bound, d, db)
    end
 
    if (n.type == "not") then
-      return translate_not(n, bound, d, context, tracing)
+      return translate_not(n, bound, d, db)
    end
 
    print ("ok, so we kind of suck right now and only handle some fixed patterns",
@@ -577,17 +576,19 @@ function walk(graph, key, bound, tail, context, tracing)
 end
 
 
-function build(queryGraph, tracing, context)
-  local errCount = context.errors and #context.errors
+function build(queryGraph, db)
+  -- put the error path into env if we still care at all
+  bid = suuid()
   local tailf = function(b)
-    return empty_env(), cnode(queryGraph, "terminal", {}, {}, context, tracing)
+    return empty_env(), cnode(queryGraph, "terminal", {}, {}, {}, db)
   end
-  local env, program = walk(queryGraph.unpacked, nil, {}, tailf, context, tracing)
-  context.downEdges[#context.downEdges + 1] = {queryGraph.id, node_id(program)}
-  -- Only emit the continuation graph if building it did not produce any new errors
-  if not context.errors or #context.errors == errCount then
-    return program, env.maxregs
-  end
+  local env, program = walk(queryGraph.unpacked, nil, {}, tailf, db)
+
+  insert_edb(db, bid, sstring("name"), queryGraph.name)
+  insert_edb(db, bid, sstring("tag"), sym(block))
+  insert_edb(db, bid, sstring("regs"), snumber(env.maxregs))
+  insert_edb(db, bid, sstring("start"), program)
+  return program, env.maxregs
 end
 
 ------------------------------------------------------------
