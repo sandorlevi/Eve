@@ -16,15 +16,6 @@ function shallowcopy(orig)
     return copy
 end
 
-function cnode(n, name, next, arms, args, db)
-   -- create an edge between the c node and the parse node
-   local id = suuid()
-   for a, v in ipairs(args) do           
-      insert_edb(db, id, a, v)
-   end
-   return id
-end
-
 function flat_print_table(t)
    if type(t) == "table" then
      local result = ""
@@ -51,10 +42,23 @@ function recurse_print_table(t)
    return result
 end
 
-function push(m, x, y)
-   m[#m+1] = x
-   m[#m+1] = y
+function cnode(n, name, next, arms, args, db)
+   -- create an edge between the c node and the parse node
+   local id = generate_uuid()
+   insert_edb(db, id, sstring("name"), sstring(name))  
+   for a, v in pairs(args) do          
+      if type(v) == "table" then
+         for _, v2 in ipairs(v) do           
+           insert_edb(db, id, sstring(a), v2)
+         end
+      else  
+        insert_edb(db, id, sstring(a), v)
+      end
+   end
+   return id
 end
+
+
 
 
 function translate_value(x)
@@ -77,7 +81,7 @@ function translate_value(x)
       end
 
       if ct == "uuid" then
-         return suuid(x.constant)
+         print ("dont be passing me a textual uuid..for shame")
       end
 
       if ct == "none" then
@@ -242,7 +246,7 @@ function translate_subagg(n, bound, down, db)
                           {groupings = set_to_read_array(n, env, n.groupings or {}),
                            provides = set_to_read_array(n, env, n.provides),
                            pass = read_lookup(n, env, pass)},
-                     db)
+                         db)
   end
 
   local env, rest = walk(n.nodes, nil, bound, tail, db)
@@ -261,18 +265,18 @@ function translate_subproject(n, bound, down, db)
    local t = n.nodes
    local env, rest, fill, c
    local pass = allocate_temp(n)
-   local db = shallowcopy(bound)
+   local leg_bound = shallowcopy(bound)
    bound[pass] = true
 
    local provides = Set:new()
    for term, _ in pairs(n.provides) do
      if not term.cardinal and not bound[term] then
        provides:add(term)
-       db[term] = true
+       leg_bound[term] = true
      end
    end
 
-   env, rest = down(db)
+   env, rest = down(leg_bound)
 
    local saveids = env.ids
    env.ids = {}
@@ -280,7 +284,7 @@ function translate_subproject(n, bound, down, db)
      return env, cnode(n, "subtail",  nil, {},
                              {provides=set_to_read_array(n, env, provides),
                              pass=read_lookup(n, env, pass)},
-                 db)
+                       db)
 
    end
 
@@ -306,8 +310,7 @@ function translate_subproject(n, bound, down, db)
                pass = write_lookup(n, env, pass),
                ids = set_to_write_array(n, env, env.ids),
                id_collapse = true},
-            context,
-            tracing)
+            db)
 
    env.ids = saveids
    return env, c
@@ -347,12 +350,12 @@ function translate_object(n, bound, down, db)
    end
 
    return env, cnode(n, "scan", c, {},
-                  {sig = sig,
-                   scopes = scopes,
-                   e = ef(n, env, e),
-                   a = af(n, env, a),
-                   v = vf(n, env, v)},
-                db)
+                      {sig = sig,
+                       scopes = scopes,
+                       e = ef(n, env, e),
+                       a = af(n, env, a),
+                       v = vf(n, env, v)},
+                    db)
  end
 
 
@@ -431,10 +434,7 @@ function translate_choose(n, bound, down, db)
    local bot = cnode(n, "choosetail",
                           c, {},
                           {pass = read_lookup(n, env, flag)},
-                          context,
-                          tracing)
-
-   local id = util.generateId()
+                          db)
 
    local arm_bottom = function (bound)
         return env, bot
@@ -485,7 +485,7 @@ function translate_union(n, bound, down, db)
 end
 
 
-function translate_expression(n, bound, down, db)
+function translate_expression(n, bound, down, edb)
   local signature = db.getSignature(n.bindings, bound)
   local schema = db.getSchema(n.operator, signature)
   if not schema then
@@ -526,7 +526,7 @@ function translate_expression(n, bound, down, db)
        nodeArgs.groupings = groupings
    end
 
-   return env, cnode(n, schema.name or n.operator, c, {}, nodeArgs, db)
+   return env, cnode(n, schema.name or n.operator, c, {}, nodeArgs, edb)
 end
 
 function walk(graph, key, bound, tail, db)
@@ -537,9 +537,10 @@ function walk(graph, key, bound, tail, db)
    end
 
    local n = graph[nk]
+
    d = function (bound)
-                return walk(graph, nk, bound, tail, db)
-           end
+         return walk(graph, nk, bound, tail, db)
+       end
 
    if (n.type == "union") then
       return translate_union(n, bound, d, db)
@@ -563,7 +564,6 @@ function walk(graph, key, bound, tail, db)
    if (n.type == "expression") then
       return translate_expression(n, bound, d, db)
    end
-
    if (n.type == "not") then
       return translate_not(n, bound, d, db)
    end
@@ -578,14 +578,14 @@ end
 
 function build(queryGraph, db)
   -- put the error path into env if we still care at all
-  bid = suuid()
+  bid = generate_uuid()
   local tailf = function(b)
     return empty_env(), cnode(queryGraph, "terminal", {}, {}, {}, db)
   end
   local env, program = walk(queryGraph.unpacked, nil, {}, tailf, db)
 
-  insert_edb(db, bid, sstring("name"), queryGraph.name)
-  insert_edb(db, bid, sstring("tag"), sym(block))
+  insert_edb(db, bid, sstring("name"), sstring(queryGraph.name))
+  insert_edb(db, bid, sstring("tag"), sstring(block))
   insert_edb(db, bid, sstring("regs"), snumber(env.maxregs))
   insert_edb(db, bid, sstring("start"), program)
   return program, env.maxregs

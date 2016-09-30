@@ -12,6 +12,7 @@ local getmetatable = getmetatable
 local setmetatable = setmetatable
 local string = string
 local table = table
+local create_edb = create_edb
 local util = require("util")
 local Set = require("set").Set
 local parser = require("parser")
@@ -1357,7 +1358,7 @@ function compileExec(contents, tracing)
   end
 
   local set = {}
-
+  local db = create_edb()
   for ix, queryGraph in ipairs(parseGraph.children) do
     local dependencyGraph = DependencyGraph:fromQueryGraph(queryGraph, context)
     local unpacked = unpackObjects(dependencyGraph, context)
@@ -1365,19 +1366,17 @@ function compileExec(contents, tracing)
     -- @NOTE: We cannot allow dead DGs to still try and run, they may be missing filtering hunks and fire all sorts of missiles
     if not dependencyGraph.ignore then
       dependencyGraph:addToBag(context.compilerBag)
-       build.build(queryGraph, db)
-      set[#set+1] = {head = head, regs = regs, name = queryGraph.name}
+      build.build(queryGraph, db)
     end
   end
 
   parseGraphAddToBag(parseGraph, context.compilerBag)
 
-
   if context.errors and #context.errors ~= 0 then
     print("Bailing due to errors.")
     return {}, context.compilerBag.cbag
   end
-  return set, context.compilerBag.cbag
+  return db, context.compilerBag.cbag
 end
 
 function analyze(content, quiet)

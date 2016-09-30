@@ -72,29 +72,6 @@ value lua_tovalue(lua_State *L, int index)
     return 0;
 }
 
-
-static int construct_uuid(lua_State *L)
-{
-    interpreter c = lua_context(L);
-    unsigned char *body  = (void *)lua_tostring(L, 1);
-    unsigned int length = lua_strlen(L, 1);
-    // probably move this out of luanne
-    unsigned char id[12];
-
-    if (length > 24) {
-        lua_pushnil(L);
-        return 1;
-    }
-
-    for (int i = 0 ; i < length; i += 2) {
-        int loc = i/2;
-        id[loc] = (digit_of(body[i]) * 16) + digit_of(body[i+1]);
-    }
-    lua_pushlightuserdata(L, intern_uuid(id));
-    return 1;
-}
-
-
 static int construct_register(lua_State *L)
 {
     evaluation c = (void *)lua_context(L);
@@ -190,8 +167,11 @@ bag lua_compile_eve(interpreter c, heap h, buffer b, boolean tracing)
         printf ("%s\n", lua_tostring(c->L, -1));
     }
 
-    bag result = lua_tovalue(c->L, 5);
-    return(result);
+    // xxx - these should be shared, but compiler is just so piggy
+    // cut it down
+    bag compiler = lua_tovalue(c->L, 5);
+    bag db =  lua_tovalue(c->L, 4);
+    return(db);
 }
 
 value lua_run_module_func(interpreter c, buffer b, char *module, char *func)
@@ -250,7 +230,7 @@ int lua_insert_edb(lua_State *L)
     bag b = (bag) lua_touserdata(L, 1);
     value e = (value) lua_touserdata(L, 2);
     value a = (value) lua_touserdata(L, 3);
-    value v = (value) lua_touserdata(L, 4);
+    value v = (value) lua_tovalue(L, 4);
     int m = (int)lua_tonumber(L, 5);
     apply(b->insert, e, a, v, m, 0);
 
@@ -281,7 +261,6 @@ interpreter build_lua()
     bundle_add_loaders(c->L);
 
     // make me a lua package ala utf8
-    define(c, "suuid", construct_uuid);
     define(c, "snumber", construct_number);
     define(c, "sregister", construct_register);
     define(c, "sboolean", construct_boolean);
@@ -323,5 +302,6 @@ bag compile_eve(heap h, buffer source, boolean tracing)
     lua->h = h;
     bag b = lua_compile_eve(lua, h, source, tracing);
     free_lua(lua);
+    prf("%b\n", edb_dump(init, (edb)b));
     return b;
 }
