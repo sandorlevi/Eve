@@ -145,6 +145,7 @@ context init_context(heap page_allocator)
     c->tid = fetch_and_add(&tid_count, 1);
     c->page_heap = page_allocator;
     c->s = select_init(h);
+    c->short_lived = allocate_rolling(c->page_heap, sstring("transient"));
     c->t = initialize_timers(allocate_rolling(page_allocator, sstring("timers")));
     // xxx - allocation scheme for these queue sets
     c->input_queues = allocate(h, 10 * sizeof(queue));

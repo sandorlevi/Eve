@@ -302,6 +302,5 @@ bag compile_eve(heap h, buffer source, boolean tracing)
     lua->h = h;
     bag b = lua_compile_eve(lua, h, source, tracing);
     free_lua(lua);
-    prf("%b\n", edb_dump(init, (edb)b));
     return b;
 }

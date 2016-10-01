@@ -80,7 +80,6 @@ static void do_sub(perf p, sub s, heap h, perf pp, value *r)
         s->results = create_value_vector_table(s->resh);
     }
 
-
     if (!(res = table_find(s->results, s->v))){
         res = create_value_vector_table(s->h);
         key = allocate_vector(s->h, vector_length(s->projection));
@@ -115,7 +114,7 @@ static void build_sub(block bk, bag b, uuid n, execf *e, flushf *f)
     s->v = allocate_vector(s->h, vector_length(s->projection));
     // xxx - fix build
     value leg = blookupv(b, n, sym(leg));
-    s->leg = resolve_cfg(bk, leg);
+    s->leg = resolve_cfg(bk, blookupv(b, n, sym(arm)));
     s->outputs = blookup_vector(bk->h, b, n, sym(provides));
     s->resreg =  blookupv(b, n, sym(pass));
     s->ids = blookup_vector(bk->h, b, n, sym(ids));
@@ -144,7 +143,7 @@ static void do_choose_tail(perf p, execf next, value flag, heap h, perf pp, valu
 
 static void build_choose_tail(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector arms = blookup_vector(bk->h, b, n, sym(arms));
+    vector arms = blookup_vector(bk->h, b, n, sym(arm));
     *e = cont(bk->h,
               do_choose_tail,
               register_perf(bk->ev, n),
@@ -176,7 +175,7 @@ static void do_choose(perf p, execf n, vector legs, value flag, boolean *flagsto
 
 static void build_choose(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector arms = blookup_vector(bk->h, b, n, sym(arms));
+    vector arms = blookup_vector(bk->h, b, n, sym(arm));
     int narms = vector_length(arms);
     vector v = allocate_vector(bk->h, narms);
     // ooh - take out the damn index!
@@ -217,7 +216,7 @@ static void build_not(block bk, bag b, uuid n, execf *e, flushf *f)
               do_not,
               register_perf(bk->ev, n),
               cfg_next(bk, b, n),
-              resolve_cfg(bk, blookupv(b, n, sym(arms))),
+              resolve_cfg(bk, blookupv(b, n, sym(arm))),
               blookupv(b, n, sym(pass)),
               allocate(bk->h, sizeof(boolean)));
 }
@@ -261,7 +260,7 @@ static execf build_merge(block bk, bag b, uuid n, execf *e, flushf *f)
     *f = cont(bk->h,
               do_merge_flush, 
               *f,
-              (int)*(double *)blookupv(b, n, sym(arms)),
+              (int)*(double *)blookupv(b, n, sym(arm)),
               c);
 }
 
@@ -400,7 +399,7 @@ static void do_fork(perf p, vector legs, heap h, perf pp, value *r)
 
 static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector arms = blookup_vector(bk->h, b, n, sym(arms));
+    vector arms = blookup_vector(bk->h, b, n, sym(arm));
     int count = vector_length(arms);
     vector a = allocate_vector(bk->h, count);
     
@@ -441,11 +440,10 @@ table builders_table()
     return builders;
 }
 
-
 static void print_dot_internal(buffer dest, table visited, table counters, bag b, uuid n)
 {
     if (!table_find(visited, n)) {
-        vector arms = blookup_vector(transient, b, n, sym(arms));
+        vector arms = blookup_vector(transient, b, n, sym(arm));
         buffer description = allocate_string(dest->h);
         estring sig = blookupv(b, n, sym(sig));
         estring e = blookupv(b, n, sym(e));
@@ -483,14 +481,19 @@ static void force_node(block bk, bag b, uuid n)
     if (!table_find(bk->nmap, n)){
         execf *x = allocate(bk->h, sizeof(execf *));
         table_set(bk->nmap, n, x);
+
         // this is* guarenteed to be ordered - lets use that please - pass next and f through e if its available
         // what if its not
 
-        //        vector_foreach(n->arms, i)
-        //            force_node(bk, i);
+        vector_foreach(blookup_vector(transient, b, n, sym(arm)), i)
+            force_node(bk, b, i);
+
+        uuid z;
+        if (z = blookupv( b, n, sym(next))) 
+            force_node(bk, b, z);
         execf e;
         flushf f;
-        buildf bf = table_find(builders, blookupv(b, n, sym(type)));
+        buildf bf = table_find(builders_table(), blookupv(b, n, sym(type)));
         bf(bk, b, n, &e, &f);
     }
 }
@@ -511,7 +514,7 @@ block build(evaluation ev, bag b, uuid root)
     bk->name = blookupv(b, root, sym(name));
     // this is only used during building
     bk->nmap = allocate_table(bk->h, key_from_pointer, compare_pointer);
-    bk->start = blookupv(b, root, sym(regs));
+    bk->start = blookupv(b, root, sym(start));
     force_node(bk, b, bk->start);
     bk->head = *(execf *)table_find(bk->nmap, bk->start);
     return bk;

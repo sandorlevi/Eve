@@ -42,17 +42,17 @@ function recurse_print_table(t)
    return result
 end
 
-function cnode(n, name, next, arms, args, db)
+function cnode(n, name, args, db)
    -- create an edge between the c node and the parse node
    local id = generate_uuid()
-   insert_edb(db, id, sstring("name"), sstring(name))  
+   insert_edb(db, id, sstring("type"), sstring(name), 1)  
    for a, v in pairs(args) do          
       if type(v) == "table" then
          for _, v2 in ipairs(v) do           
-           insert_edb(db, id, sstring(a), v2)
+           insert_edb(db, id, sstring(a), v2, 1)
          end
       else  
-        insert_edb(db, id, sstring(a), v)
+        insert_edb(db, id, sstring(a), v, 1)
       end
    end
    return id
@@ -235,15 +235,15 @@ function list_to_write_array(n, env, x)
 end
 
 
-
 function translate_subagg(n, bound, down, db)
   local pass = allocate_temp(n)
   bound[pass] = true
 
   function tail (bound)
        local env, rest = down(bound)
-       return env, cnode(n, "subaggtail", rest, {}, 
-                          {groupings = set_to_read_array(n, env, n.groupings or {}),
+       return env, cnode(n, "subaggtail", 
+                          {next = rest,
+                           groupings = set_to_read_array(n, env, n.groupings or {}),
                            provides = set_to_read_array(n, env, n.provides),
                            pass = read_lookup(n, env, pass)},
                          db)
@@ -252,8 +252,9 @@ function translate_subagg(n, bound, down, db)
   local env, rest = walk(n.nodes, nil, bound, tail, db)
 
 
-  c = cnode(n, "subagg", rest, {},
-                   {projection = set_to_read_array(n, env, n.projection),
+  c = cnode(n, "subagg", 
+                   {next = rest,
+                    projection = set_to_read_array(n, env, n.projection),
                     groupings = set_to_read_array(n, env, n.groupings or {}),
                     pass = write_lookup(n, env, pass)},
                  db)
@@ -281,7 +282,7 @@ function translate_subproject(n, bound, down, db)
    local saveids = env.ids
    env.ids = {}
    function tail (bound)
-     return env, cnode(n, "subtail",  nil, {},
+     return env, cnode(n, "subtail",
                              {provides=set_to_read_array(n, env, provides),
                              pass=read_lookup(n, env, pass)},
                        db)
@@ -304,8 +305,10 @@ function translate_subproject(n, bound, down, db)
      end
    end
 
-   c = cnode(n, "sub", rest, {fill},
-              {projection = set_to_read_array(n, env, n.projection),
+   c = cnode(n, "sub",
+              {arm = fill,
+               next = rest,  
+               projection = set_to_read_array(n, env, n.projection),
                provides = set_to_read_array(n, env, provides),
                pass = write_lookup(n, env, pass),
                ids = set_to_write_array(n, env, env.ids),
@@ -344,14 +347,15 @@ function translate_object(n, bound, down, db)
    local env, c = down(bound)
 
    -- the nodes arguments are all arrays, so translate
-   local scopes = {}
+   local scope = {}
    for k, v in pairs(n.scopes) do
-        scopes[#scopes + 1] = k
+        scope[#scope + 1] = k
    end
 
-   return env, cnode(n, "scan", c, {},
+   return env, cnode(n, "scan",
                       {sig = sig,
-                       scopes = scopes,
+                       next = c,
+                       scope = scope,
                        e = ef(n, env, e),
                        a = af(n, env, a),
                        v = vf(n, env, v)},
@@ -371,13 +375,14 @@ function translate_mutate(n, bound, down, db)
    local operator = n.operator
 
    -- the nodes arguments are all arrays, so translate
-   local scopes = {}
+   local scope = {}
    for k, v in pairs(n.scopes) do
-        scopes[#scopes + 1] = k
+        scope[#scope + 1] = k
    end
 
-   c = cnode(n, operator, c, {},
-                        {scopes = scopes,
+   c = cnode(n, operator,
+                        {next = c, 
+                         scope = scope,
                          mutateType = n.mutateType,
                          e = read_lookup(n, env,e),
                          a = read_lookup(n, env,a),
@@ -392,14 +397,13 @@ end
 
 function translate_not(n, bound, down, db)
    local env
-   local arms = {}
+   local arm = {}
    local flag = allocate_temp(n)
    tail_bound = shallowcopy(bound)
 
    local env, c = down(tail_bound)
    local orig_perm = shallowcopy(env.permanent)
-   local bot = cnode(n, "choosetail", nil,
-                          {},
+   local bot = cnode(n, "choosetail", 
                           {pass = read_lookup(n, env, flag)},
                           db)
 
@@ -411,14 +415,14 @@ function translate_not(n, bound, down, db)
          env.permanent[n] = true
    end
    env, arm = walk(n.queries[1].unpacked, nil, shallowcopy(bound), arm_bottom, db)
-   return env, cnode(n, "not", c, {arm}, {pass = read_lookup(n, env, flag)}, db)
+   return env, cnode(n, "not", {next = c, arm = {arm}, pass = read_lookup(n, env, flag)}, db)
 end
 
 
 -- looks alot like union
 function translate_choose(n, bound, down, db)
    local env
-   local arms = {}
+   local arm = {}
    local flag = allocate_temp(n)
 
    local tail_bound = shallowcopy(bound)
@@ -429,11 +433,10 @@ function translate_choose(n, bound, down, db)
    local env, c = down(tail_bound)
    local orig_perm = shallowcopy(env.permanent)
 
-   arms[1] = c
+   arm[1] = c
 
    local bot = cnode(n, "choosetail",
-                          c, {},
-                          {pass = read_lookup(n, env, flag)},
+                          {next = c, pass = read_lookup(n, env, flag)},
                           db)
 
    local arm_bottom = function (bound)
@@ -446,17 +449,17 @@ function translate_choose(n, bound, down, db)
 
    for _, v in pairs(n.queries) do
         env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, db)
-        arms[#arms+1] = c2
+        arm[#arm+1] = c2
    end
 
    env.permanent = orig_perm
-   return env, cnode(n, "choose", nil, arms, {pass = read_lookup(n, env, flag)}, db)
+   return env, cnode(n, "choose", {arm = arm, pass = read_lookup(n, env, flag)}, db)
 end
 
 function translate_union(n, bound, down, db)
    local heads
    local c2
-   local arms = {}
+   local arm = {}
    tail_bound = shallowcopy(bound)
 
    for _, v in pairs(n.outputs) do
@@ -477,11 +480,11 @@ function translate_union(n, bound, down, db)
    for _, v in pairs(n.queries) do
       local c2
       env, c2 = walk(v.unpacked, nil, shallowcopy(bound), arm_bottom, db)
-      arms[#arms+1] = c2
+      arm[#arm+1] = c2
    end
    env.permanent = orig_perm
 
-   return env, cnode(n, "fork", nil, arms, {}, db)
+   return env, cnode(n, "fork", nil, arm , {}, db)
 end
 
 
@@ -526,7 +529,8 @@ function translate_expression(n, bound, down, edb)
        nodeArgs.groupings = groupings
    end
 
-   return env, cnode(n, schema.name or n.operator, c, {}, nodeArgs, edb)
+   nodeArgs.next = c
+   return env, cnode(n, schema.name or n.operator, nodeArgs, edb)
 end
 
 function walk(graph, key, bound, tail, db)
@@ -580,14 +584,14 @@ function build(queryGraph, db)
   -- put the error path into env if we still care at all
   bid = generate_uuid()
   local tailf = function(b)
-    return empty_env(), cnode(queryGraph, "terminal", {}, {}, {}, db)
+    return empty_env(), cnode(queryGraph, "terminal", {}, db)
   end
   local env, program = walk(queryGraph.unpacked, nil, {}, tailf, db)
 
-  insert_edb(db, bid, sstring("name"), sstring(queryGraph.name))
-  insert_edb(db, bid, sstring("tag"), sstring(block))
-  insert_edb(db, bid, sstring("regs"), snumber(env.maxregs))
-  insert_edb(db, bid, sstring("start"), program)
+  insert_edb(db, bid, sstring("name"), sstring(queryGraph.name), 1)
+  insert_edb(db, bid, sstring("tag"), sstring(block), 1)
+  insert_edb(db, bid, sstring("regs"), snumber(env.maxregs), 1)
+  insert_edb(db, bid, sstring("start"), program, 1)
   return program, env.maxregs
 end
 

@@ -221,7 +221,7 @@ static void do_set(block bk, perf p, execf n,
 
 static execf build_set(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    vector name_scopes = blookupv(b, n,sym(scopes));
+    vector name_scopes = blookup_vector(bk->h, b, n,sym(scope));
 
     *e = cont(bk->h,
               do_set, 
