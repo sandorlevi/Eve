@@ -29,3 +29,4 @@ typedef int tid;
 extern pthread_key_t pkey;
 #define tcontext() ((context)pthread_getspecific(pkey))
 #define transient (tcontext()->short_lived)
+context thread_init(heap page_heap, thunk start);

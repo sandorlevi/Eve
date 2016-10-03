@@ -6,6 +6,7 @@ static void *start_thread(void *z)
 {
     context c = z;
     pthread_setspecific(pkey, c);
+    printf("zakky: %p\n", c->page_heap);
     prf("thread started\n");
     apply(c->start);
     unix_wait();
@@ -32,9 +33,8 @@ static void io_write(descriptor d, buffer b, tid result, thunk t)
 
 void asynch_write(descriptor d, buffer b, thunk finished)
 {
-    if (!io_thread) 
+    if (!io_thread)
         io_thread = thread_init(pages, ignore);
-    
+
     thread_send(io_thread->tid, cont(init, io_write, d, b, tcontext()->tid, finished));
 }
-

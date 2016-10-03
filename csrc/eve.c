@@ -140,6 +140,15 @@ static void do_analyze(char *x)
     free_lua(c);
 }
 
+static void start_threads(char *x)
+{
+    int res = 0;
+    prf("starting thread: %p\n", pages);
+    for (char *i = x; *i; i++) res = res * 10  + *i - '0';
+    for (int i = 0; i < res; i++)
+        thread_init(pages, ignore);
+}
+
 // xxx - this should really be a bag creation function, once we get our function
 // and first class bag story straight
 static void do_db(char *x)
@@ -186,6 +195,7 @@ static struct command command_body[] = {
     {"P", "port", "serve http on passed port", true, do_port},
     {"h", "help", "print help", false, print_help},
     {"t", "tracing", "enable per-statement tracing", false, do_tracing},
+    {"T", "threads", "run N additional worker threads", true, start_threads},
     {"d", "data log", "set directory for per-bag log files", true, do_logging},
     //    {"R", "resolve", "implication resolver", false, 0},
 };

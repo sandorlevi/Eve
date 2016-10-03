@@ -3,7 +3,7 @@
 #endif
 
 #include <unix_internal.h>
- 
+
 typedef struct region_heap {
     struct heap h;
     u64 base, max, fill;
@@ -21,14 +21,13 @@ static void *region_pages(heap h, bytes s)
         p = r->freelist;
         r->freelist = *(void **)r->freelist;
     } else {
-        p = mmap((void *)r->fill, length,
+        u64 addr = fetch_and_add(&r->fill, length);
+        p = mmap((void *)addr, length,
                  PROT_READ|PROT_WRITE,
                  MAP_PRIVATE|MAP_ANON|MAP_FIXED,
                  -1,0);
         if (p == MAP_FAILED) return 0;
     }
-    // atomic increment
-    r->fill += length;
     h->allocated += length;
     return(p);
 }
@@ -52,7 +51,7 @@ boolean in_region(region_heap r, void *p) {
     return ((x >= r->base) && (x <= r->fill));
 }
 
-     
+
 heap init_fixed_page_region(heap meta,
                             u64 base_address,
                             u64 max_address,
