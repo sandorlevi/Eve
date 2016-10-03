@@ -249,7 +249,59 @@ static void fixedpoint_error(evaluation ev, vector diffs, char * message) {
 
 extern string print_dot(heap h, block bk, table counters);
 
-static boolean fixedpoint(evaluation ev)
+void simple_commit_handler(multibag backing, multibag m, closure(done,boolean))
+{
+    // xxx - clear out the new bags before anything else
+    // this is so process will have them?
+    if (m) {
+        bag bdelta = table_find(m, bag_bag_id);
+        bag b = table_find(backing, bag_bag_id);
+        if (b) apply(b->commit, (edb)bdelta);
+    }
+
+    multibag_foreach(m, u, b) {
+        bag bd;
+        if (u != bag_bag_id) {
+            // xxx - we were soft creating implicitly
+            // defined bags in the persistent state..but
+            // we'll just going to throw them away
+            if ((bd = table_find(backing, u)))
+                apply(bd->commit, b);
+        }
+    }
+
+    // this should be part of the commit above, but we want all the
+    // targets to be consistent
+    multibag_foreach(m, u, b){
+        table_foreach(((bag)b)->listeners, t, _) {
+            apply((bag_handler)t, b);
+        }
+    }
+    apply(done, true);
+}
+
+static CONTINUATION_3_1(fp_complete, evaluation, vector, ticks, boolean);
+static void fp_complete(evaluation ev, vector counts, ticks start_time, boolean status)
+{
+    ticks end_time = now();
+
+    ticks handler_time = end_time;
+    // counters? reflection? enable them
+    apply(ev->complete, ev->t_solution, ev->last_f_solution, true);
+
+    prf ("fixedpoint %v in %t seconds, %d blocks, %V iterations, %d changes to global, %d maintains, %t seconds handler\n",
+         ev->name,
+         end_time-start_time, vector_length(ev->blocks),
+         counts,
+         multibag_count(ev->t_solution),
+         multibag_count(ev->last_f_solution),
+         now() - end_time);
+
+    destroy(ev->working);
+}
+
+
+static void fixedpoint(evaluation ev)
 {
     long iterations = 0;
     vector counts = allocate_vector(ev->working, 10);
@@ -277,7 +329,8 @@ static boolean fixedpoint(evaluation ev)
             }
             if(iterations > MAX_F_ITERATIONS) {
                 fixedpoint_error(ev, f_diffs, "Unable to converge in F");
-                return false;
+                apply(ev->complete, 0, 0, false);
+                return;
             }
         } while(!compare_multibags(ev->f_solution, ev->last_f_solution));
 
@@ -301,72 +354,11 @@ static boolean fixedpoint(evaluation ev)
 
         if(vector_length(counts) > MAX_T_ITERATIONS) {
             fixedpoint_error(ev, t_diffs, "Unable to converge in T");
-            return false;
+            apply(ev->complete, 0, 0, false);
         }
     } while(again);
 
-
-
-    // xxx - clear out the new bags before anything else
-    if (ev->t_solution) {
-        edb bdelta = table_find(ev->t_solution, bag_bag_id);
-        if (bdelta)
-            apply(ev->bag_bag->commit, bdelta);
-    }
-
-    multibag_foreach(ev->t_solution, u, b) {
-        bag bd;
-        if (u != bag_bag_id) {
-            if (!(bd = table_find(ev->t_input, u)))
-                table_set(ev->t_input, u, bd = (bag)create_edb(ev->h, 0));
-            apply(bd->commit, b);
-        }
-    }
-
-    multibag_foreach(ev->t_solution, u, b){
-        table_foreach(((bag)b)->listeners, t, _) {
-            apply((bag_handler)t, b);
-        }
-    }
-
-    ticks end_time = now();
-
-    ticks handler_time = end_time;
-    table_set(ev->counters, intern_cstring("time"), (void *)(end_time - start_time));
-    table_set(ev->counters, intern_cstring("iterations"), (void *)iterations);
-    table_set(ev->counters, intern_cstring("cycle-time"), (void *)ev->cycle_time);
-    // counters? reflection? enable them
-    apply(ev->complete, ev->t_solution, ev->last_f_solution);
-
-    prf ("fixedpoint %v in %t seconds, %d blocks, %V iterations, %d changes to global, %d maintains, %t seconds handler\n",
-         ev->name,
-         end_time-start_time, vector_length(ev->blocks),
-         counts,
-         multibag_count(ev->t_solution),
-         multibag_count(ev->last_f_solution),
-         now() - end_time);
-
-    // ticks max_ticks = 0;
-    // perf max_p = 0;
-    // node max_node = 0;
-    // table_foreach(ev->counters, n, pv) {
-    //     perf p = (perf) pv;
-    //     if(max_ticks < p->time) {
-    //         max_ticks = p->time;
-    //         max_p = p;
-    //         max_node = n;
-    //     }
-    // }
-
-    // vector_foreach(ev->blocks, bk)
-    //  prf("%b\n", print_dot(ev->working, bk, ev->counters));
-
-    // prf("Max node");
-    // prf(" - node: %p, kind: %v, id: %v, time: %t, count: %d\n", max_node, max_node->type, max_node->id, max_p->time, max_p->count);
-    // prf("\n\n\n");
-
-    destroy(ev->working);
-    return true;
+    ev->commit(ev->t_solution, ev->t_input, cont(ev->working, fp_complete, ev, counts, start_time));
 }
 
 static void setup_evaluation(evaluation ev)

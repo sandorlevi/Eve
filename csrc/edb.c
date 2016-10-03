@@ -43,7 +43,7 @@ value lookupv(edb b, uuid e, estring a)
     return(0);
 }
 
-static vector lookup_vector_internal(vector dest, edb b, uuid e, estring a)
+static void lookup_vector_internal(vector dest, edb b, uuid e, estring a)
 {
     table al = value_table_find(b->eav, e);
     if(al) {

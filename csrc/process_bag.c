@@ -95,7 +95,7 @@ void process_bag_commit(process_bag pb, edb s)
             table_set(p->scopes, sym(compiler), compiler_id);
             table_set(p->persisted, compiler_id, compiler_bag);
 
-            p->ev = build_evaluation(p->h, p->name, p->scopes, p->persisted, ignore, ignore, n);
+            p->ev = build_evaluation(p->h, p->name, p->scopes, p->persisted, (evaluation_result)ignore, ignore, n);
             vector_foreach(p->read, i)
                 vector_insert(p->ev->default_scan_scopes, i);
             vector_foreach(p->write, i)

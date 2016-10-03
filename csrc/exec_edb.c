@@ -57,7 +57,7 @@ static void do_scan(block bk, perf p, execf n,
 
 static inline boolean is_cap(unsigned char x) {return (x >= 'A') && (x <= 'Z');}
 
-static execf build_scan(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_scan(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     estring description = blookupv(b, n, sym(sig));
     int sig = 0;
@@ -99,7 +99,7 @@ static void do_insert(insert ins,
 
     vector_foreach(ins->scopes, u)
         multibag_insert(ins->target, *ins->h, u,
-                        lookup(r, ins->e), 
+                        lookup(r, ins->e),
                         lookup(r, ins->a),
                         lookup(r, ins->v),
                         ins->deltam, ins->bk->name);
@@ -194,17 +194,17 @@ static void do_set(block bk, perf p, execf n,
     boolean should_insert = true;
     bag b;
     multibag *target;
-    
+
     if (mt == sym(bind)) {
         target = &bk->ev->block_f_solution;
     } else {
         target = &bk->ev->block_t_solution;
     }
-    
+
     vector_foreach(scopes, u) {
         if (vv != register_ignore)
             multibag_insert(target, bk->ev->h, u, ev, av, vv, 1, bk->name);
-        
+
         if ((b = table_find(bk->ev->t_input, u))) {
             apply(b->scan, s_EAv,
                   cont(h, each_t_remove, bk->ev, bk->ev->working, u, target),
@@ -219,12 +219,12 @@ static void do_set(block bk, perf p, execf n,
     apply(n, h, p, r);
 }
 
-static execf build_set(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_set(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     vector name_scopes = blookup_vector(bk->h, b, n,sym(scope));
 
     *e = cont(bk->h,
-              do_set, 
+              do_set,
               bk,
               register_perf(bk->ev, n),
               cfg_next(bk, b, n),
@@ -250,7 +250,7 @@ static void do_erase(perf p, execf n, block bk, vector scopes, value mt, value e
     } else {
         target = &bk->ev->block_t_solution;
     }
-    
+
     vector_foreach(scopes, u) {
         // xxx - this can be done in constant time rather than
         // the size of the object. the attribute tables are also
@@ -270,7 +270,7 @@ static void do_erase(perf p, execf n, block bk, vector scopes, value mt, value e
     stop_perf(p, pp);
 }
 
-static execf build_erase(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_erase(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     vector name_scopes = blookup_vector(bk->h, b, n,sym(scopes));
 

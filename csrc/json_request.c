@@ -80,8 +80,8 @@ static void send_diff(heap h, buffer_handler output, values_diff diff)
     apply(output, out, cont(h, send_destroy, h));
 }
 
-static CONTINUATION_1_2(send_response, json_session, multibag, multibag);
-static void send_response(json_session session, multibag t_solution, multibag f_solution)
+static CONTINUATION_1_3(send_response, json_session, multibag, multibag, boolean);
+static void send_response(json_session session, multibag t_solution, multibag f_solution, boolean status)
 {
     heap h = allocate_rolling(pages, sstring("response"));
     heap p = allocate_rolling(pages, sstring("response delta"));

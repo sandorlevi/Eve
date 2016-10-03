@@ -52,7 +52,7 @@ typedef struct block *block;
 #include <edb.h>
 #include <multibag.h>
 
-typedef closure(evaluation_result, multibag, multibag);
+typedef closure(evaluation_result, multibag, multibag, boolean);
 
 struct block {
     heap h;
@@ -70,6 +70,8 @@ typedef closure(error_handler, char *, bag, uuid);
 typedef closure(bag_handler, bag);
 typedef closure(bag_block_handler, bag, vector, vector); // source, inserts, removes
 
+typedef void (*commit_function)(multibag backing, multibag delta, closure(finish, boolean));
+
 struct evaluation  {
     heap h;
     estring name;
@@ -84,7 +86,6 @@ struct evaluation  {
     multibag last_f_solution;
     multibag t_solution;
     multibag t_solution_for_f;
-    // map from names to uuids
 
     vector blocks;
     bag event_bag;
@@ -103,6 +104,7 @@ struct evaluation  {
     bag bag_bag;
 
     bag_block_handler inject_blocks;
+    commit_function commit;
 };
 
 
@@ -163,13 +165,10 @@ bag start_log(bag base, char *filename);
 
 static inline value blookupv(bag b, value e, value a)
 {
-    lookupv((edb)b, e, a);
+    return lookupv((edb)b, e, a);
 }
 
 static inline vector blookup_vector(heap h, bag b, value e, value a)
 {
-    lookup_vector(h, (edb)b, e, a);
+    return lookup_vector(h, (edb)b, e, a);
 }
-
-
- 

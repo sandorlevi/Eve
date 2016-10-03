@@ -7,10 +7,10 @@ static void do_concat(perf p, execf n, value dest, vector terms, heap h, perf pp
 {
     start_perf(p);
     buffer b = allocate_string(h);
-    
+
     vector_foreach(terms, i)
         print_value_raw(b, lookup(r, i));
-    
+
     store(r, dest, intern_string(bref(b, 0), buffer_length(b)));
     apply(n, h, p, r);
     stop_perf(p, pp);
@@ -59,7 +59,7 @@ static void do_split(perf p, execf n,
     for (int i = 0; i < s->length; i++) {
         character si = s->body[i];
         character ki = k->body[j];
-        
+
         if (!out) out = allocate_string(h);
         if (si == ki) {
             j++;
@@ -136,7 +136,7 @@ static void do_length(block bk, perf p, execf n, value dest, value src, heap h, 
 }
 
 
-static execf build_length(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_length(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     *e = cont(bk->h, do_length,
               bk,

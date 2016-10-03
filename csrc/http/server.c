@@ -103,10 +103,10 @@ void new_connection(http_server s,
     apply(e->r, request_header_parser(h, cont(h, dispatch_request, hs)));
 }
 
-static CONTINUATION_3_2(http_eval_result, http_server, process_bag, uuid,
-                        multibag, multibag);
+static CONTINUATION_3_3(http_eval_result, http_server, process_bag, uuid,
+                        multibag, multibag, boolean);
 static void http_eval_result(http_server s, process_bag pb, uuid where,
-                             multibag t, multibag f)
+                             multibag t, multibag f, boolean status)
 {
     bag b;
 

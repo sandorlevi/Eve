@@ -179,7 +179,7 @@ static void build_choose(block bk, bag b, uuid n, execf *e, flushf *f)
     int narms = vector_length(arms);
     vector v = allocate_vector(bk->h, narms);
     // ooh - take out the damn index!
-    vector_foreach(arms, i) 
+    vector_foreach(arms, i)
         vector_insert(v, resolve_cfg(bk, i));
 
     *e = cont(bk->h,
@@ -250,15 +250,15 @@ static void do_merge_flush(flushf n, int count, u32 *total)
     if (*total == count) {
         apply(n);
         *total = 0;
-    } 
+    }
 }
 
-static execf build_merge(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_merge(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     u32 *c = allocate(bk->h, sizeof(u32));
     *c = 0;
     *f = cont(bk->h,
-              do_merge_flush, 
+              do_merge_flush,
               *f,
               (int)*(double *)blookupv(b, n, sym(arm)),
               c);
@@ -282,7 +282,7 @@ CONTINUATION_1_0(remove_timer, timer);
 static CONTINUATION_8_3(do_time,
                         block, perf, execf, value, value, value, value, timer,
                         heap, perf, value *);
-static void do_time(block bk, perf p, execf n, value hour, value minute, value second, value frame, timer t, 
+static void do_time(block bk, perf p, execf n, value hour, value minute, value second, value frame, timer t,
                     heap h, perf pp, value *r)
 {
     start_perf(p);
@@ -320,7 +320,7 @@ static void build_time(block bk, bag b, uuid n, execf *e, flushf *f)
     else if(second != 0) interval = seconds(1);
     else if(minute != 0) interval = seconds(60);
     // xxx - this shoud be only one of these guys at the finest resolution
-    // requested for by the block..this should really just be 
+    // requested for by the block..this should really just be
     // 'ask the commit time', with a different thing for
     // 'create an object for each time'
     timer t = register_periodic_timer(tcontext()->t, interval, cont(bk->h, time_expire, bk));
@@ -338,7 +338,7 @@ static void build_time(block bk, bag b, uuid n, execf *e, flushf *f)
 }
 
 static CONTINUATION_5_3(do_random,
-                        block, perf, execf, value, value, 
+                        block, perf, execf, value, value,
                         heap, perf, value *);
 static void do_random(block bk, perf p, execf n, value dest, value seed, heap h, perf pp, value *r)
 {
@@ -347,11 +347,11 @@ static void do_random(block bk, perf p, execf n, value dest, value seed, heap h,
     // This is all very scientific.
     u64 ub = value_as_key(lookup(r, seed));
     u32 tb = (u64)bk->ev->t & (0x200000 - 1); // The 21 bottom tick bits are pretty random
-    
+
     // Fold the tick bits down into a u8
     u8 ts = (tb ^ (tb >> 7)
              ^ (tb >> 14)) & (0x80 - 1);
-    
+
     // Fold the user seed bits down into a u8
     u8 us = (ub ^ (ub >> 7)
              ^ (ub >> 14)
@@ -362,17 +362,17 @@ static void do_random(block bk, perf p, execf n, value dest, value seed, heap h,
              ^ (ub >> 49)
              ^ (ub >> 56)
              ^ (ub >> 63)) & (0x80 - 1);
-    
+
     // We fold down to 7 bits to gain some semblance of actual entropy. This means the RNG only has 128 outputs for now.
     u8 true_seed = us ^ ts;
-    
+
     // No actual rng for now.
     store(r, dest, box_float(((double)true_seed)/128.0));
     apply(n, h, p, r);
     stop_perf(p, pp);
 }
 
-static execf build_random(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_random(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     value dest = blookupv(b, n, sym(return));
     value seed = blookupv(b, n, sym(seed));
@@ -386,7 +386,7 @@ static execf build_random(block bk, bag b, uuid n, execf *e, flushf *f)
               seed);
 }
 
-static CONTINUATION_2_3(do_fork, 
+static CONTINUATION_2_3(do_fork,
                         perf, vector,
                         heap, perf, value *);
 static void do_fork(perf p, vector legs, heap h, perf pp, value *r)
@@ -402,7 +402,7 @@ static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
     vector arms = blookup_vector(bk->h, b, n, sym(arm));
     int count = vector_length(arms);
     vector a = allocate_vector(bk->h, count);
-    
+
     vector_foreach(arms, i)
         vector_insert(a, resolve_cfg(bk, n));
     *e = cont(bk->h, do_fork, register_perf(bk->ev, n), a);
@@ -489,7 +489,7 @@ static void force_node(block bk, bag b, uuid n)
             force_node(bk, b, i);
 
         uuid z;
-        if (z = blookupv( b, n, sym(next))) 
+        if ((z = blookupv( b, n, sym(next))))
             force_node(bk, b, z);
         execf e;
         flushf f;
@@ -500,7 +500,7 @@ static void force_node(block bk, bag b, uuid n)
 
 void block_close(block bk)
 {
-    // who calls this and for what purpose? do they want a flush? 
+    // who calls this and for what purpose? do they want a flush?
     destroy(bk->h);
 }
 

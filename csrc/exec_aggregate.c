@@ -11,7 +11,7 @@ static void sort_flush(pqueue q, value out, heap h, execf n, perf p, value *r)
 {
     value i;
     int count;
-    while (i = pqueue_pop(q)) {
+    while ((i = pqueue_pop(q))) {
         // if we dont do the denorm trick, these should at least be findable and resuable
         store(r, out, box_float(count++));
         apply(n, h, p, r);
@@ -37,7 +37,7 @@ static void do_sort(execf n, perf p,
         table_set(*targets,pk, x);
     }
     pqueue_insert(x, lookup(r, key));
-    
+
     stop_perf(p, pp);
 }
 
@@ -69,7 +69,7 @@ static void join_flush(value out, pqueue q, execf n, heap h, perf p, value *r)
 {
     buffer composed = allocate_string(h);
     join_key jk;
-    while (jk = (join_key)pqueue_pop(q)){
+    while ((jk = (join_key)pqueue_pop(q))){
         buffer_append(composed, jk->token->body, jk->token->length);
         buffer_append(composed, jk->with->body, jk->with->length);
     }
@@ -77,7 +77,7 @@ static void join_flush(value out, pqueue q, execf n, heap h, perf p, value *r)
     apply(n, h, p, r);
 }
 
-static CONTINUATION_4_3(do_join, pqueue, value, value, value, 
+static CONTINUATION_4_3(do_join, pqueue, value, value, value,
                         heap, perf, value *);
 static void do_join(pqueue q, value token, value index, value with,
                     heap h, perf p, value *r)
@@ -128,7 +128,7 @@ static void simple_agg_flush(value x, value dst, heap h, perf pp, value *r)
 
 static CONTINUATION_3_3(do_simple_agg, dubop,  double *, value,
                         heap, perf, value *);
-static void do_simple_agg(dubop op, double *x, value src, 
+static void do_simple_agg(dubop op, double *x, value src,
                           heap h, perf pp, value *r)
 {
     *x = op(*x, *(double *)lookup(r, src));
@@ -150,8 +150,8 @@ static void build_simple_agg(heap h, bag b, uuid n, execf *e, execf *f)
               op,
               x,
               blookupv(b, n, sym(value)));
-    *f = cont(h, 
-              simple_agg_flush, 
+    *f = cont(h,
+              simple_agg_flush,
               x,
               blookupv(b, n, sym(return)));
 }
@@ -223,7 +223,7 @@ static void do_subagg(perf p, execf next, subagg sag,
                       heap h, perf pp, value *r)
 {
     start_perf(p);
-    
+
     if (!sag->phase) {
         sag->phase = allocate_rolling(pages, sstring("subagg"));
         sag->proj =  create_value_vector_table(sag->phase);
@@ -279,9 +279,9 @@ static void build_subagg(block bk, bag b, uuid n, execf *e, flushf *f)
 }
 
 static void flush_grouping(heap h,
-                           table *groups, 
-                           vector grouping, 
-                           int regs, 
+                           table *groups,
+                           vector grouping,
+                           int regs,
                            vector pk,
                            flushf f)
 {
@@ -331,8 +331,8 @@ static void build_grouping(block bk, bag b, uuid n, execf *e, flushf *f)
     vector groupings = blookup_vector(bk->h, b, n, sym(groupings));
     table *groups = allocate(bk->h, sizeof(struct table));
     *groups = 0;
-    *e = cont(bk->h,exec_grouping, 
-              bk->h, ba, cfg_next(bk, b, n), 
+    *e = cont(bk->h,exec_grouping,
+              bk->h, ba, cfg_next(bk, b, n),
               register_perf(bk->ev, n), groups,
               groupings,
               allocate_vector(bk->h, vector_length(groupings)));
@@ -346,8 +346,8 @@ void register_aggregate_builders(table builders)
     table_set(builders, intern_cstring("sum"), build_grouping);
     table_set(builders, intern_cstring("join"), build_grouping);
     table_set(builders, intern_cstring("sort"), build_grouping);
-    
-    // aggbuilders get called on a case by case basis by 
+
+    // aggbuilders get called on a case by case basis by
     // the grouper
     table_set(aggbuilders, intern_cstring("sum"), build_simple_agg);
     table_set(aggbuilders, intern_cstring("min"), build_simple_agg);

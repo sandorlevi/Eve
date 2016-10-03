@@ -94,7 +94,7 @@ static void do_equal(block bk, perf p, execf n, value a, value b, heap h, perf p
     }
 
 #define BUILD_UNARY_VALUE(__name, __do_op)                \
-    static execf __name (block bk, bag b, uuid n,         \
+    static void __name (block bk, bag b, uuid n,          \
                          execf *e, flushf *f)             \
     {                                                     \
         *e = cont(bk->h,                                  \
@@ -151,7 +151,7 @@ static void do_equal(block bk, perf p, execf n, value a, value b, heap h, perf p
 
 
 #define BUILD_BINARY(__name, __do_op)                     \
-    static execf __name (block bk, bag b, uuid n,         \
+    static void __name (block bk, bag b, uuid n,          \
                          execf *e, flushf *f)             \
     {                                                     \
         *e = cont(bk->h,                                  \
@@ -198,9 +198,10 @@ static void do_equal(block bk, perf p, execf n, value a, value b, heap h, perf p
 
 
 #define BUILD_BINARY_FILTER(__name, __do_op)      \
-    static execf __name (block bk, bag b, uuid n) \
+    static void __name (block bk, bag b, uuid n,  \
+                        execf *e, flushf *f)      \
     {                                             \
-        return cont(bk->h,                        \
+        *e = cont(bk->h,                          \
                 __do_op,                          \
                 bk,                               \
                 register_perf(bk->ev, n),         \
@@ -308,7 +309,7 @@ static void build_mod (block bk, bag b, uuid n, execf *e, flushf *f)
               do_mod,
               bk,
               register_perf(bk->ev, n),
-              cfg_next(bk, b, n),                   
+              cfg_next(bk, b, n),
               blookupv(b, n, sym(return)),
               blookupv(b, n, sym(value)),
               blookupv(b, n, sym(by)));

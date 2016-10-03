@@ -2,6 +2,7 @@
 
 typedef struct dns_bag {
     struct bag b;
+    heap h;
 } *dns_bag;
 
 
@@ -12,7 +13,7 @@ void dns_scan(evaluation ev, int sig, listener out, value e, value a, value v)
     }
 
     if (sig & a_sig) {
-        
+
     }
     if (sig & v_sig) {
     }
@@ -20,5 +21,8 @@ void dns_scan(evaluation ev, int sig, listener out, value e, value a, value v)
 
 bag create_dns_bag(estring resolver)
 {
+    heap h = allocate_rolling(pages, sstring("dns bag"));
+    dns_bag b = allocate(h, sizeof(struct dns_bag));
+    b->h = h;
+    return (bag)b;
 }
-
