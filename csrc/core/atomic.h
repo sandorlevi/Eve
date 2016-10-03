@@ -1,4 +1,4 @@
-static inline int fetch_and_add(u64 * variable, u64 value)
+static inline u64 fetch_and_add(volatile u64 * variable, u64 value)
 {
     asm volatile("lock; xaddq %0, %1"
                  : "=r" (value), "=m" (*variable)

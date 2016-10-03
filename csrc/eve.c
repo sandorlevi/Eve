@@ -140,13 +140,21 @@ static void do_analyze(char *x)
     free_lua(c);
 }
 
+static CONTINUATION_0_0(hey);
+static void hey()
+{
+    prf("hey! %d\n", tcontext()->myself);
+}
+
 static void start_threads(char *x)
 {
     int res = 0;
     prf("starting thread: %p\n", pages);
     for (char *i = x; *i; i++) res = res * 10  + *i - '0';
-    for (int i = 0; i < res; i++)
+    for (int i = 0; i < res; i++) {
         thread_init(pages, ignore);
+        schedule_remote(0, cont(init, hey));
+    }
 }
 
 // xxx - this should really be a bag creation function, once we get our function

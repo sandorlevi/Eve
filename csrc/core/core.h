@@ -42,5 +42,4 @@ typedef struct buffer *buffer;
 #include <atomic.h>
 #include <queue.h>
 
-extern heap init;
 

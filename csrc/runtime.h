@@ -30,6 +30,7 @@ string aprintf(heap h, char *fmt, ...);
 void bbprintf(string b, string fmt, ...);
 
 #define pages (tcontext()->page_heap)
+#define init (tcontext()->h)
 
 typedef struct perf {
     int count;

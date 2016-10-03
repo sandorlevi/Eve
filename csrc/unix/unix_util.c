@@ -133,26 +133,3 @@ station station_from_string(heap h, buffer b)
     return new;
 }
 
-static u64 tid_count;
-// pages now threadsafe
-context init_context(heap page_allocator)
-{
-    heap h = allocate_rolling(page_allocator, sstring("thread_init"));
-    context c = allocate(h, sizeof(struct context));
-    
-    signal(SIGPIPE, SIG_IGN);
-    // put a per thread freelist on top of
-    c->tid = fetch_and_add(&tid_count, 1);
-    c->page_heap = page_allocator;
-    c->s = select_init(h);
-    c->short_lived = allocate_rolling(c->page_heap, sstring("transient"));
-    c->t = initialize_timers(allocate_rolling(page_allocator, sstring("timers")));
-    // xxx - allocation scheme for these queue sets
-    c->input_queues = allocate(h, 10 * sizeof(queue));
-    c->output_queues = allocate(h, 10 * sizeof(queue));
-    c->h = h;
-    memset(c->input_queues, 0, 10 * sizeof(queue));
-    memset(c->output_queues, 0, 10 * sizeof(queue));
-    pipe(c->wakeup);
-    return c;
-}

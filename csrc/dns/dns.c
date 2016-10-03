@@ -1,5 +1,4 @@
-#include <core/core.h>
-#include <unix/unix.h>
+#include <runtime.h>
 #include <dns/dns.h>
 
 
