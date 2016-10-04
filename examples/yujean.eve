@@ -29,8 +29,8 @@ match
      connection = [#http-request]
      connection.request.url = "/gallery"
 match @yuri
-     [#piece title]
-     content = join[token:"{{title}}<br>" index:0 with:""]
+     [#piece title id]
+     content = join[token:"{{title}}<br>" index:0 given:id with:""]
 commit
      connection.response := [
        content

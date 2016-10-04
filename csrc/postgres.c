@@ -151,8 +151,11 @@ static void table_dump_row(postgres p, pgtable t, vector res)
     int index;
     apply(p->backing->insert, id, sym(tag), t->name, 1, 0);
     vector_foreach(res, i) {
-        pgcolumn c = vector_get(t->column_list, index++);
-        apply(p->backing->insert, id, c->name, i, 1, 0);
+        if (i) {
+            pgcolumn c = vector_get(t->column_list, index);
+            apply(p->backing->insert, id, c->name, i, 1, 0);
+        }
+        index++;
     }
 }
 
@@ -174,7 +177,6 @@ static void table_dump(postgres p, pgtable t, thunk done)
         bprintf(q, "%r", ((pgcolumn)i)->name);
     }
     bprintf(q, " FROM %r", t->name);
-    prf("%b\n", q);
     pg_query(p, q, cont(p->h, table_dump_row, p, t), cont(p->h, mark_fetched, t, done));
 }
 
@@ -251,10 +253,13 @@ static void postgres_message(postgres p, u8 code, buffer b)
     // row
     case 'D': {
         u16 cols = buffer_read_be16(b);
+        // reuse this guy
         vector result = allocate_vector(p->h, vector_length(p->signature));
         for (int i = 0; i < cols; i++) {
             u32 len = buffer_read_be32(b);
-            if (len != 0xffffffff) { // null
+            if (len == 0xffffffff) {
+                push(result, 0);
+            } else {
                 buffer r = wrap_buffer(p->h, bref(b, 0), len);
                 push(result, ((buffer_to_value)vector_get(p->signature, i))(r));
                 b->start += len;
@@ -269,6 +274,7 @@ static void postgres_message(postgres p, u8 code, buffer b)
     // row schema
     case 'T': {
         int count = buffer_read_be16(b);
+        prf("row schema: %d\n", count);
         for (int i = 0; i < count; i++) {
             buffer name = allocate_buffer(p->h, 10);
             character x;

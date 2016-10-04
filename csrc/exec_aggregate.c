@@ -360,7 +360,7 @@ static execf build_subagg(block bk, node n)
     sag->gkey = allocate_vector(bk->h, vector_length(sag->groupings));
     sag->pass = table_find(n->arguments, sym(pass));
     sag->regs = bk->regs;
-
+    prf("build subagg: %V %V\n", sag->projection, sag->groupings);
     return cont(bk->h,
                 do_subagg,
                 register_perf(bk->ev, n),
