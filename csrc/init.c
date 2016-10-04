@@ -28,7 +28,7 @@ void init_runtime()
     pthread_key_create(&pkey, 0);
     primary = init_context(page_allocator);
     pthread_setspecific(pkey, primary);
-
+    register_read_handler(primary->s, primary->wakeup[0], primary->self);
     ignore = cont(init, ignoro);
     init_estring();
     init_uuid();

@@ -146,14 +146,20 @@ static void hey()
     prf("hey! %d\n", tcontext()->myself);
 }
 
+static CONTINUATION_0_0(starty);
+static void starty()
+{
+    schedule_remote(0, cont(init, hey));
+}
+
+
 static void start_threads(char *x)
 {
     int res = 0;
     prf("starting thread: %p\n", pages);
     for (char *i = x; *i; i++) res = res * 10  + *i - '0';
     for (int i = 0; i < res; i++) {
-        thread_init(pages, ignore);
-        schedule_remote(0, cont(init, hey));
+        thread_init(pages, cont(init, starty));
     }
 }
 

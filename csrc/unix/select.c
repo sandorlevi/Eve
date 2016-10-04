@@ -6,7 +6,7 @@ struct selector {
     table read_handlers;
     table write_handlers;
 };
-    
+
 
 void register_read_handler(selector s, descriptor d, thunk t)
 {
@@ -46,7 +46,7 @@ void select_timer_block(selector s, ticks interval)
     fd_set writes;
     FD_ZERO(&reads);
     FD_ZERO(&writes);
-    
+
     if (interval){
         ticks_to_timeval(&timeout, interval);
         timeout_pointer = &timeout;
@@ -74,12 +74,7 @@ static boolean compare_fd(void *x, void *y) {return((unsigned long)x==(unsigned 
 selector select_init(heap h)
 {
     selector s = allocate(h, sizeof(struct selector));
-    s->read_handlers = allocate_table(init, key_from_fd, compare_fd);
-    s->write_handlers = allocate_table(init, key_from_fd, compare_fd);
+    s->read_handlers = allocate_table(h, key_from_fd, compare_fd);
+    s->write_handlers = allocate_table(h, key_from_fd, compare_fd);
     return s;
 }
-
-
-
-
-

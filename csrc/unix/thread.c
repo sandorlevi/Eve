@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <signal.h>
 
-#define MAX_THREADS 10 
+#define MAX_THREADS 10
 
 volatile u64 thread_count;
 // xxx - these should definiately* be cache line aligned
@@ -12,6 +12,7 @@ static void *start_thread(void *z)
 {
     context c = z;
     pthread_setspecific(pkey, c);
+    register_read_handler(c->s, c->wakeup[0], c->self);
     prf("thread started\n");
     apply(c->start);
     unix_wait();
@@ -47,9 +48,10 @@ void asynch_write(descriptor d, buffer b, thunk finished)
 static CONTINUATION_1_0(check_queues, context);
 static void check_queues(context c)
 {
+    tid myself = tcontext()->myself;
     for (int i = 0; i < thread_count; i++) {
         thunk t;
-        if (t = qpoll(c->queues+i))
+        if ((i != myself) && (t = qpoll(c->queues+i)))
             apply(t);
     }
     unsigned char z;
@@ -68,19 +70,22 @@ void schedule_remote(tid target, thunk t)
 // pages now threadsafe
 context init_context(heap page_allocator)
 {
-    heap h = allocate_rolling(page_allocator, sstring("thread_init"));
+    // no heap name because init dep issues
+    heap h = allocate_rolling(page_allocator, 0);
+    h->name = wrap_buffer(h, "init", 4);
     tid myself =  fetch_and_add(&thread_count, 1);
     context c = contexts + myself;
     signal(SIGPIPE, SIG_IGN);
     // put a per thread freelist on top of
+    c->h = h;
     c->myself = myself;
     c->page_heap = page_allocator;
     c->s = select_init(h);
-    c->short_lived = allocate_rolling(c->page_heap, sstring("transient"));
-    c->t = initialize_timers(allocate_rolling(page_allocator, sstring("timers")));
+    c->short_lived = allocate_rolling(c->page_heap, wrap_buffer(h, "transient", 9));
+    c->t = initialize_timers(allocate_rolling(page_allocator, wrap_buffer(h, "transient", 6)));
     // xxx - allocation scheme for these queue sets
     c->queues = allocate(h, 10 * sizeof(queue));
-    c->h = h;
+
     memset(c->queues, 0, 10 * sizeof(queue));
     for(int i = 0 ; i < myself; i++) {
         c->queues[i] = allocate_queue(h, 8);
@@ -88,6 +93,5 @@ context init_context(heap page_allocator)
     }
     c->self = cont(h, check_queues, c);
     pipe(c->wakeup);
-    register_read_handler(c->s, c->wakeup[0], c->self);
     return c;
 }
