@@ -66,6 +66,7 @@ vector lookup_vector(heap h, edb b, uuid e, estring a)
     return dest;
 }
 
+
 int edb_size(edb b)
 {
     return b->count;

@@ -55,6 +55,17 @@ function cnode(n, name, args, db)
         insert_edb(db, id, sstring(a), v, 1)
       end
    end
+
+   -- sleezy setting from C, since this whole world is about to be chucked,
+   -- we're trying not to feel bad
+   if tracing() then 
+      local tid = id
+      insert_edb(db, tid, sstring("type"), sstring("trace"), 1)  
+      insert_edb(db, tid, sstring("about"), id);
+      insert_edb(db, tid, sstring("next"), id);
+      id = tid
+   end
+
    return id
 end
 
@@ -218,10 +229,10 @@ function set_to_write_array(n, env, x)
    return out
 end
 
-function list_to_read_array(n, env, x)
-   local out = {}
-   for _, v in ipairs(x) do
-      out[#out+1] = read_lookup(n, env, v)
+function list_to_read_array(db, n, env, x)
+   local out = generate_uuid()
+   for i, v in ipairs(x) do
+      insert_edb(db, out, snumber(i), read_lookup(n, env, v), 1)
    end
    return out
 end
@@ -305,7 +316,7 @@ function translate_subproject(n, bound, down, db)
      end
    end
 
-   c = cnode(n, "sub",
+   c = cnode(n, "subproject",
               {arm = fill,
                next = rest,  
                projection = set_to_read_array(n, env, n.projection),
@@ -501,32 +512,22 @@ function translate_expression(n, bound, down, edb)
     bound[term] = true
   end
   local env, c = down(bound)
+  local nodeArgs = {}
 
-   -- Tack variadic arg vector onto the end
-   local variadic
    if args["..."] then
-     variadic = list_to_read_array(n, env, args["..."])
+     nodeArgs.variadic = list_to_read_array(edb, n, env, args["..."])
    end
 
-   local groupings
    if n.groupings then
-     groupings = set_to_read_array(n, env, n.groupings)
+     nodeArgs.groupings = set_to_read_array(n, env, n.groupings)
    end
 
-   local nodeArgs = {}
    for ix, field in ipairs(fields) do
      if schema.signature[field] == db.OUT then
        nodeArgs[field] = write_lookup(n, env, args[ix])
      else
        nodeArgs[field] = read_lookup(n, env, args[ix])
      end
-   end
-
-   if variadic then
-       nodeArgs.variadic = variadic
-   end
-   if groupings then
-       nodeArgs.groupings = groupings
    end
 
    nodeArgs.next = c

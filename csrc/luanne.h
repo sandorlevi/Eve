@@ -4,6 +4,7 @@
     
 typedef struct interpreter  {
     heap h;
+    boolean tracing;
     lua_State *L;
     struct interpreter *next;
 } *interpreter;

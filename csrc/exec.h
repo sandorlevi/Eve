@@ -8,7 +8,7 @@ static void exec_error(evaluation e, char *format, ...)
 // xxx - ok, arms are currently ordered...break that?
 static inline execf resolve_cfg(block bk, uuid n)
 {
-    return (*(execf *)table_find(bk->nmap, n));
+    return table_find(bk->nmap, n);
 }
 
 static boolean isreg(value k)
@@ -102,8 +102,10 @@ static inline void stop_perf(perf p, perf pp)
     p->time += delta;
 }
 
+// xxx - there is probably a better way to wire this
 static execf cfg_next(block bk, bag g, uuid n)
 {
-    return 0;
+    return(table_find(bk->nmap, blookupv(g, n, sym(next))));
 }
+
 

@@ -84,3 +84,14 @@ edb create_edb(heap, vector inherits);
     for(multiplicity __c = ((leaf)__cv)->m , __z = 0; __z == 0; __z++)
 
 buffer edb_dump(heap, edb);
+
+
+// this doesn't use includes - not sure if that makes sense:/
+static inline vector lookup_array(heap h, edb b, uuid e)
+{
+    vector dest = allocate_vector(h, 10);
+    value x;
+    for (int i = 0; (x = lookupv(b, e, box_float(i))); i++)
+        vector_insert(dest, x);
+    return dest;
+}

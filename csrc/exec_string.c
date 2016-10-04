@@ -23,7 +23,8 @@ static void build_concat(block bk, bag b, uuid n, execf *e, flushf *f)
               register_perf(bk->ev, n),
               cfg_next(bk, b, n),
               blookupv(b, n, sym(return)),
-              blookupv(b, n, sym(variadic)));
+              // these have to be ordered!
+              lookup_array(bk->h, (edb)b, blookupv(b, n, sym(variadic))));
 }
 
 

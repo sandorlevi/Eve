@@ -231,6 +231,9 @@ int lua_insert_edb(lua_State *L)
     value e = (value) lua_touserdata(L, 2);
     value a = (value) lua_touserdata(L, 3);
     value v = (value) lua_tovalue(L, 4);
+    if (!v) {
+        prf("bad v %v %v\n", e, a);
+    }
     int m = (int)lua_tonumber(L, 5);
     apply(b->insert, e, a, v, m, 0);
 
@@ -244,6 +247,13 @@ int lua_dump_edb(lua_State *L)
     string out = edb_dump(c->h, (edb) b);
     lua_pushlstring(L, bref(out, 0), buffer_length(out));
 
+    return 1;
+}
+
+int lua_check_tracing(lua_State *L)
+{
+    interpreter c = lua_context(L);
+    lua_pushboolean(L, c->tracing);
     return 1;
 }
 
@@ -270,6 +280,8 @@ interpreter build_lua()
     define(c, "create_edb", lua_create_edb);
     define(c, "insert_edb", lua_insert_edb);
     define(c, "dump_edb", lua_dump_edb);
+    // sleezy per-interp setting 
+    define(c, "tracing", lua_check_tracing);
     define(c, "snone", none);
     require_luajit(c, "compiler");
     return c;
@@ -300,6 +312,7 @@ bag compile_eve(heap h, buffer source, boolean tracing)
 {
     interpreter lua = get_lua();
     lua->h = h;
+    lua->tracing = tracing;
     bag b = lua_compile_eve(lua, h, source, tracing);
     free_lua(lua);
     return b;

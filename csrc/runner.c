@@ -255,7 +255,7 @@ void simple_commit_handler(multibag backing, multibag m, closure(done,boolean))
     if (m) {
         bag bdelta = table_find(m, bag_bag_id);
         bag b = table_find(backing, bag_bag_id);
-        if (b) apply(b->commit, (edb)bdelta);
+        if (b && bdelta) apply(b->commit, (edb)bdelta);
     }
 
     multibag_foreach(m, u, b) {
@@ -356,7 +356,7 @@ static void fixedpoint(evaluation ev)
         }
     } while(again);
 
-    ev->commit(ev->t_solution, ev->t_input, cont(ev->working, fp_complete, ev, counts, start_time));
+    ev->commit(ev->t_input, ev->t_solution, cont(ev->working, fp_complete, ev, counts, start_time));
 }
 
 static void setup_evaluation(evaluation ev)
@@ -434,6 +434,7 @@ evaluation build_evaluation(heap h,
     ev->inject_blocks = cont(h, inject_blocks, ev);
     ev->default_scan_scopes = allocate_vector(h, 5);
     ev->default_insert_scopes = allocate_vector(h, 5);
+    ev->commit = simple_commit_handler;
 
     // xxx - this should be on a per-block basis
     table_foreach(ev->t_input, uuid, z) {

@@ -22,7 +22,7 @@ static void build_sub_tail(block bk, bag b, uuid n, execf *e, flushf *f)
               do_sub_tail,
               register_perf(bk->ev, n),
               blookupv(b, n, sym(pass)),
-              blookupv(b, n, sym(provides)));
+              blookup_vector(bk->h, b, n, sym(provides)));
 }
 
 
@@ -104,7 +104,7 @@ static void do_sub(perf p, sub s, heap h, perf pp, value *r)
 }
 
 
-static void build_sub(block bk, bag b, uuid n, execf *e, flushf *f)
+static void build_subproject(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     sub s = allocate(bk->h, sizeof(struct sub));
     s->h = bk->h;
@@ -112,13 +112,13 @@ static void build_sub(block bk, bag b, uuid n, execf *e, flushf *f)
     s->ids_cache = create_value_vector_table(s->h);
     s->projection = blookup_vector(bk->h, b, n, sym(projection));
     s->v = allocate_vector(s->h, vector_length(s->projection));
-    // xxx - fix build
-    value leg = blookupv(b, n, sym(leg));
-    s->leg = resolve_cfg(bk, blookupv(b, n, sym(arm)));
+    value leg = blookupv(b, n, sym(arm));
+    s->leg = resolve_cfg(bk, leg);
+
     s->outputs = blookup_vector(bk->h, b, n, sym(provides));
     s->resreg =  blookupv(b, n, sym(pass));
     s->ids = blookup_vector(bk->h, b, n, sym(ids));
-    s->next = *e;
+    s->next = cfg_next(bk, b, n);
     s->id_collapse = (blookupv(b, n, sym(id_collapse))==etrue)?true:false;
     *e = cont(s->h,
               do_sub,
@@ -408,6 +408,32 @@ static void build_fork(block bk, bag b, uuid n, execf *e, flushf *f)
     *e = cont(bk->h, do_fork, register_perf(bk->ev, n), a);
 }
 
+
+static CONTINUATION_3_3(do_trace, execf, bag, uuid, heap, perf, value *);
+static void do_trace(execf next, bag b, uuid n, heap h, perf pp, value *r)
+{
+    prf("%010r\n",
+        blookupv(b, n, sym(name)),
+        n);
+        //        table_foreach(n->arguments, k, v) {
+        //            // xxx - what is name doing in there anyways?
+        //            if ((k != sym(name)) && (k != sym(pass)))
+        //                prf (" %r=%v ", k, lookup(r, v));
+        //    prf("\n");
+    apply(next, h, pp, r);
+}
+
+static void build_trace(block bk, bag b, uuid n, execf *e, flushf *f)
+{
+    *e = cont(bk->h,
+              do_trace,
+              cfg_next(bk, b, n),
+              b, 
+              blookupv(b, n, sym(about)));
+}
+
+
+
 static table builders;
 
 extern void register_exec_expression(table builders);
@@ -421,7 +447,7 @@ table builders_table()
     if (!builders) {
         builders = allocate_table(init, key_from_pointer, compare_pointer);
         table_set(builders, intern_cstring("fork"), build_fork);
-        table_set(builders, intern_cstring("sub"), build_sub);
+        table_set(builders, intern_cstring("subproject"), build_subproject);
         table_set(builders, intern_cstring("subtail"), build_sub_tail);
         table_set(builders, intern_cstring("terminal"), build_terminal);
         table_set(builders, intern_cstring("choose"), build_choose);
@@ -431,6 +457,7 @@ table builders_table()
         table_set(builders, intern_cstring("time"), build_time);
         table_set(builders, intern_cstring("merge"), build_merge);
         table_set(builders, intern_cstring("random"), build_random);
+        table_set(builders, intern_cstring("trace"), build_trace);
 
         register_exec_expression(builders);
         register_string_builders(builders);
@@ -482,12 +509,8 @@ static void force_node(block bk, bag b, uuid n)
         execf *x = allocate(bk->h, sizeof(execf *));
         table_set(bk->nmap, n, x);
 
-        // this is* guarenteed to be ordered - lets use that please - pass next and f through e if its available
-        // what if its not
-
         vector_foreach(blookup_vector(transient, b, n, sym(arm)), i)
             force_node(bk, b, i);
-
         uuid z;
         if ((z = blookupv( b, n, sym(next))))
             force_node(bk, b, z);
@@ -495,6 +518,7 @@ static void force_node(block bk, bag b, uuid n)
         flushf f;
         buildf bf = table_find(builders_table(), blookupv(b, n, sym(type)));
         bf(bk, b, n, &e, &f);
+        table_set(bk->nmap, n, e);
     }
 }
 
@@ -516,6 +540,6 @@ block build(evaluation ev, bag b, uuid root)
     bk->nmap = allocate_table(bk->h, key_from_pointer, compare_pointer);
     bk->start = blookupv(b, root, sym(start));
     force_node(bk, b, bk->start);
-    bk->head = *(execf *)table_find(bk->nmap, bk->start);
+    bk->head = table_find(bk->nmap, bk->start);
     return bk;
 }
