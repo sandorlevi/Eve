@@ -108,7 +108,6 @@ void merge_scan(evaluation ev, vector scopes, int sig, listener result, value e,
     vector_foreach(scopes, u) {
         bag b = table_find(ev->t_input, u);
         if(!b) continue;
-
         apply(b->scan, sig,
               cont(ev->working, shadow_p_by_t_and_f, ev, result),
               e, a, v);
@@ -314,7 +313,6 @@ static void fixedpoint(evaluation ev)
     do {
         again = false;
         vector f_diffs = allocate_vector(ev->working, 2);
-
         do {
             ev->t_solution_for_f = 0;
             iterations++;
@@ -448,7 +446,7 @@ evaluation build_evaluation(heap h,
 
     if (!bag_bag_id)
         bag_bag_id = generate_uuid();
-
+    table_set(ev->t_input, bag_bag_id, ev->bag_bag);
     table_set(ev->scopes, sym(bag), bag_bag_id);
 
     uuid debug_bag_id = generate_uuid();

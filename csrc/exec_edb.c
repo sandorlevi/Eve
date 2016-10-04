@@ -9,13 +9,17 @@ static vector uuid_set(block bk, vector scopes)
     vector_foreach(scopes, i) {
         // we're going to soft create these scopes, but the uuids
         // remain unreferrable to the outside world
-        uuid u = table_find(bk->ev->scopes, i);
-        if (!u) {
-            uuid lost = generate_uuid();
-            prf("Unable to find context: %v. New id: %v\n", i, lost);
-            table_set(bk->ev->scopes, i, lost);
+        if (isreg(i)) {
+            vector_insert(out, i);
+        } else {
+            uuid u = table_find(bk->ev->scopes, i);
+            if (!u) {
+                uuid u = generate_uuid();
+                prf("Unable to find context: %v. New id: %v\n", i, u);
+                table_set(bk->ev->scopes, i, u);
+            }
+            vector_insert(out, u);
         }
-        vector_insert(out, u);
     }
     return out;
 }
@@ -47,6 +51,7 @@ static void do_scan(block bk, perf p, execf n,
 {
     start_perf(p);
 
+    // xxx scopes can contain regs here
     merge_scan(bk->ev, scopes, sig,
                cont(h, scan_listener, n, h, r, p,
                     sigbit(sig, 2, e), sigbit(sig, 1, a), sigbit(sig, 0, v)),
@@ -104,6 +109,7 @@ static void do_insert(insert ins,
                         lookup(r, ins->v),
                         ins->deltam, ins->bk->name);
 
+
     apply(ins->n, h, ins->p, r);
     stop_perf(ins->p, pp);
 }
@@ -127,6 +133,7 @@ static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int del
     }
 
     vector name_scopes = blookup_vector(bk->h, b, n, sym(scopes));
+
     ins->bk = bk;
     ins->p = register_perf(bk->ev, n);
     ins->n =  cfg_next(bk, b, n);
@@ -139,7 +146,6 @@ static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int del
 }
 
 
-// merge these two
 static void build_insert(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     build_mutation(bk, b, n, e, f, 1);

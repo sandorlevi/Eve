@@ -211,7 +211,7 @@ static void edb_insert(edb b, value e, value a, value v, multiplicity m, uuid bl
 static CONTINUATION_1_1(edb_commit, edb, edb);
 static void edb_commit(edb b, edb source)
 {
-    edb_foreach(source, e, a, v, m, block_id)
+    edb_foreach(source, e, a, v, m, block_id) 
         edb_insert(b, e, a, v, m, block_id);
 }
 
@@ -265,8 +265,9 @@ string edb_dump(heap h, edb b)
             int start = buffer_length(out);
             bprintf(out, "%S%v ", first++?ind:0, a);
             int ind2 = buffer_unicode_length(out, start) + ((first==1)?ind:0);
-            table_foreach((table)vl, v, _)
-                bprintf(out, "%S%v\n", second++?ind2:0, v);
+            table_foreach((table)vl, v, _) {
+                bprintf(out, "%S%v\n", second++?ind2:0, compress_fat_strings(v));
+            }
         }
     }
     return out;

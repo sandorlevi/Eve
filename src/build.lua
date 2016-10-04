@@ -377,7 +377,7 @@ function translate_mutate(n, bound, down, db)
    -- the nodes arguments are all arrays, so translate
    local scope = {}
    for k, v in pairs(n.scopes) do
-        scope[#scope + 1] = k
+        scope[#scope + 1] = read_lookup(n, env, k)
    end
 
    c = cnode(n, operator,

@@ -14,6 +14,7 @@ CC = cc -std=c99
 PLATFORM = $(shell uname)
 
 ifeq ($(PLATFORM), Darwin)
+  # luajit has some interesting address space requirements
   LINK += -pagezero_size 10000 -image_base 100000000 -Wl,-no_pie
   INCLUDES += --include ../csrc/unix/darwin/darwin.h
   S = _
@@ -28,6 +29,7 @@ all: eve
 
 VPATH += ..
 VPATH += ../csrc/unix
+VPATH += ../evesrc
 VPATH += ../csrc/core
 VPATH += ../csrc/http
 VPATH += ../csrc/crypto
@@ -46,19 +48,20 @@ opt: CFLAGS = -O2
 LUAPOWER = bundle.o
 UTF = lutf8lib.o
 COMPILER = compiler.o error.o fs.o parser.o util.o set.o color.o build.o implicationResolver.o db.o
-UNIX =  unix_util.o region.o select.o tcp_socket.o process.o page.o udp.o filebag.o
+UNIX =  unix_util.o region.o select.o tcp_socket.o process.o page.o udp.o thread.o
 UNIX_H = unix_internal.h unix.h
 CORE = buffer.o table.o vector.o format.o rolling.o string.o pqueue.o timer.o field.o
 CORE_H = bswap.h pqueue.h vector.h buffer.h heap.h timer.h continuation.h core.h string.h table.h atomic.h
 EXEC = exec_expression.o exec_edb.o exec_string.o exec_aggregate.o exec.o
-RUNTIME = edb.o init.o uuid.o estring.o types.o path.o serialize.o thread.o log.o 
-EVE = process_bag.o bag_bag.o debug_bag.o runner.o envbag.o json_request.o staticdb.o luanne.o postgres.o $(EXEC) 
-RUNTIME_H = luanne.h runtime.h estring.h number.h types.h exec.h edb.h multibag.h
+EVE = process_bag.o bag_bag.o debug_bag.o runner.o envbag.o json_request.o staticdb.o luanne.o postgres.o\
+      timer_bag.o runner.o json_request.o filebag.o $(EXEC) udpbag.o
+RUNTIME = init.o uuid.o estring.o types.o path.o serialize.o log.o edb.o station.o $(UNIX) $(CORE)
+RUNTIME_H = luanne.h runtime.h estring.h number.h types.h exec.h edb.h multibag.h thread.h
 HTTP = server.o websocket.o base64.o sha1.o json.o client.o http.o hmac_sha2.o sha256.o md5.o
 DNS = dns.o dnsbag.o
 HTTP_H = http.h
 CONTENT = index.html system.js microReact.js codemirror.js codemirror.css commonmark.js\
-          uuid.js client.js renderer.js editor.js db.js
+          uuid.js client.js renderer.js editor.js db.js http-server.eve
 
 luajit-2.0:
 	git clone http://luajit.org/git/luajit-2.0.git
@@ -70,7 +73,7 @@ contgen: contgen.c
 	$(CC) $< -g -o $@
 
 continuation_templates.h: contgen
-	contgen 10 10 > continuation_templates.h
+	$(BUILD)/contgen 10 10 > continuation_templates.h
 
 lutf8lib.o: lutf8lib.c
 	$(CC) -c -g -I$(LUAJIT_INCLUDES) $^
@@ -85,11 +88,11 @@ bundle.o: bundle.c
 path.c: Makefile
 	echo 'char *pathroot = "$(BUILD)/../";' > path.c
 
-package: package.o path.o $(RUNTIME) $(CORE) $(UNIX)
+package: package.o path.o $(RUNTIME) 
 	$(CC) $^ -lm -lpthread -o $@
 
 staticdb: $(DB_INCLUDES) package $(CONTENT) manifest
-	package < manifest > staticdb
+	$(BUILD)/package < manifest > staticdb
 
 staticdb.o: staticdb
 	$(CC) wrap.S -DSTART=$(S)db_start -DEND=$(S)db_end -DFILE='"$<"' -c -o $@
@@ -100,12 +103,7 @@ staticdb.o: staticdb
 %.o: %.lua $(LUAJIT)
 	$(LUAJIT) -b -g $< $@
 
-# luajit has decided that they really need to use the specific part of the
-# address space where other people normally live..no idea why, but move
-# the executable out of the way for the moment
-#macosx
-#linux  -Wl,-E
-eve: $(CORE) $(UNIX) $(COMPILER) $(UTF) $(LUAPOWER) $(HTTP) $(RUNTIME) $(DNS) $(EVE) eve.o
+eve: $(COMPILER) $(UTF) $(LUAPOWER) $(HTTP) $(RUNTIME) $(DNS) $(EVE) eve.o
 	$(CC) $^ $(LIBLUAJIT) $(LINK) -lm -ldl  -o $@
 
 clean:

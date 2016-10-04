@@ -6,8 +6,9 @@
 #define uuid_space 0x10000000000ull
 #define float_space 0x20000000000ull
 #define estring_space 0x30000000000ull
+#define station_space 0x40000000000ull
+#define register_space 0x50000000000ull
 // not actually used
-#define register_space 0x40000000000ull
 #define register_base register_space
 
 #define efalse ((void *)(register_space + 0x100000000))
@@ -38,7 +39,6 @@ static inline u64 type_of (void *x)
 {
     return ((u64)x) & region_mask;
 }
-
 static inline u64 fold_key(u64 key)
 {
     key ^= key >> 32;

@@ -1624,6 +1624,8 @@ local function findAndSetScope(root, context)
   local scopes = {}
   if child.type == "block" then
     scopes = child.children
+  elseif child.type == "IDENTIFIER" then
+    scopes[1] = resolveVariable(context, child.value, child)
   elseif (child.type == "equality" and child.children[1].type == "NAME") or child.type == "string" then
     scopes[1] = child
   end
@@ -1639,6 +1641,8 @@ local function findAndSetScope(root, context)
       root.scopes:add(scope.children[2].value)
     elseif scope.type == "STRING" then
       root.scopes:add(scope.value)
+    elseif scope.type == "variable" then
+      root.scopes:add(scope)
     else
       -- error
       errors.invalidScopeDeclaration(context, scope)

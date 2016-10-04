@@ -16,7 +16,9 @@ typedef struct pgcolumn {
 
 typedef struct pgtable {
     estring name;
-    vector columns;
+    table columns;
+    vector column_list;
+    boolean fetched;
 } *pgtable;
 
 
@@ -26,7 +28,7 @@ typedef struct postgres {
     state s;
     heap h;
     endpoint e;
-    table columns;
+    table tables;
     estring user;
     estring database;
     estring password;
@@ -36,7 +38,6 @@ typedef struct postgres {
     closure(handler, vector);
     thunk query_done;
     vector signature;
-
     vector table_worklist;
 } *postgres;
 
@@ -84,29 +85,18 @@ static void pg_schema_row(postgres p, pgtable t, vector v)
     pgcolumn c = allocate(p->h, sizeof(struct pgcolumn));
     c->name = vector_get(v, 0);
     // xxx -maybe just put this guy in the edb? or both?
-    vector_insert(t->columns, c);
-}
-
-static void pg_scan_schema(postgres p, estring table_name)
-{
-    pgtable t = allocate(p->h, sizeof(struct pgtable));
-    t->columns = allocate_vector(p->h, 10);
-    //  had - a.atttypmod as mod
-    buffer q =
-        aprintf(p->h,
-                "SELECT a.attname as Column, a.atttypid as type "
-                "FROM pg_catalog.pg_attribute a "
-                "WHERE a.attnum > 0 "
-                "AND NOT a.attisdropped "
-                "AND a.attrelid = ("
-                "SELECT c.oid FROM pg_catalog.pg_class c "
-                "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-                "WHERE c.relname = '%r')", table_name);
-    pg_query(p, q, cont(p->h, pg_schema_row, p, t), cont(p->h, table_complete, p));
+    table_set(t->columns, c, c);
+    vector_insert(t->column_list, c);
 }
 
 static value bool_from_thingy(buffer b)
 {
+    return efalse;
+}
+
+static value translate_money(buffer b)
+{
+    prf("money %X\n", b);
     return efalse;
 }
 
@@ -130,6 +120,8 @@ static buffer_to_value find_translator(u32 type_oid)
     switch(type_oid) {
     case 25:
     case 19:
+    case 17: // bytea format has likely been escaped in some whack way
+             // https://www.postgresql.org/docs/9.0/static/datatype-binary.html
     case 1043:
         return (buffer_to_value)intern_buffer;
     case 26:
@@ -138,6 +130,8 @@ static buffer_to_value find_translator(u32 type_oid)
         return float_from_int;
     case 16:
         return bool_from_thingy;
+    case 790:
+        return translate_money;
     default:
         prf("bad pg type: %d\n", type_oid);
     }
@@ -147,7 +141,6 @@ static buffer_to_value find_translator(u32 type_oid)
 static CONTINUATION_1_1(each_table, postgres, vector);
 static void each_table(postgres p, vector v)
 {
-    prf ("table %v\n", vector_get(v, 0));
     vector_insert(p->table_worklist, vector_get(v, 0));
 }
 
@@ -157,28 +150,58 @@ static void table_dump_row(postgres p, pgtable t, vector res)
     uuid id = generate_uuid();
     int index;
     apply(p->backing->insert, id, sym(tag), t->name, 1, 0);
-    vector_foreach(res, i)
-        apply(p->backing->insert, id, vector_get(t->columns, index++), i, 1, 0);
+    vector_foreach(res, i) {
+        if (i) {
+            pgcolumn c = vector_get(t->column_list, index);
+            apply(p->backing->insert, id, c->name, i, 1, 0);
+        }
+        index++;
+    }
 }
 
+static CONTINUATION_2_0(mark_fetched, pgtable, thunk);
+static void mark_fetched(pgtable t, thunk done)
+{
+    t->fetched = true;
+    apply(done);
+}
 
-static void table_dump(postgres p, pgtable t)
+static void table_dump(postgres p, pgtable t, thunk done)
 {
     buffer q = allocate_buffer(p->h, 10);
     boolean first = true;
     bprintf(q, "SELECT ");
-    vector_foreach(t->columns, i) {
+    vector_foreach(t->column_list, i) {
         if (!first) bprintf(q, ", ");
         first = false;
         bprintf(q, "%r", ((pgcolumn)i)->name);
     }
-    pg_query(p, q, cont(p->h, pg_schema_row, p, t), cont(p->h, table_complete, p));
+    bprintf(q, " FROM %r", t->name);
+    pg_query(p, q, cont(p->h, table_dump_row, p, t), cont(p->h, mark_fetched, t, done));
 }
 
 static void table_complete(postgres p)
 {
-    if (vector_length(p->table_worklist))
-        pg_scan_schema(p, pop(p->table_worklist));
+    if (vector_length(p->table_worklist)) {
+        pgtable t = allocate(p->h, sizeof(struct pgtable));
+        t->fetched = false;
+        t->name =pop(p->table_worklist);
+        t->columns = create_value_table(p->h);
+        t->column_list = allocate_vector(p->h, 10);
+        table_set(p->tables, t->name, t);
+        //  had - a.atttypmod as mod
+        buffer q =
+            aprintf(p->h,
+                    "SELECT a.attname as Column, a.atttypid as type "
+                    "FROM pg_catalog.pg_attribute a "
+                    "WHERE a.attnum > 0 "
+                    "AND NOT a.attisdropped "
+                "AND a.attrelid = ("
+                    "SELECT c.oid FROM pg_catalog.pg_class c "
+                    "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE c.relname = '%r')", t->name);
+        pg_query(p, q, cont(p->h, pg_schema_row, p, t), cont(p->h, table_complete, p));
+    }
 }
 
 #define PG_SALT_LENGTH 4
@@ -223,17 +246,20 @@ static void postgres_message(postgres p, u8 code, buffer b)
         return;
 
     case 'C': {
-        prf("completed %s\n",bref(b, 0));
+        prf("completed %b\n", b);
         apply(p->query_done);
         return;
     }
     // row
     case 'D': {
         u16 cols = buffer_read_be16(b);
+        // reuse this guy
         vector result = allocate_vector(p->h, vector_length(p->signature));
         for (int i = 0; i < cols; i++) {
             u32 len = buffer_read_be32(b);
-            if (len != 0xffffffff) { // null
+            if (len == 0xffffffff) {
+                push(result, 0);
+            } else {
                 buffer r = wrap_buffer(p->h, bref(b, 0), len);
                 push(result, ((buffer_to_value)vector_get(p->signature, i))(r));
                 b->start += len;
@@ -248,6 +274,7 @@ static void postgres_message(postgres p, u8 code, buffer b)
     // row schema
     case 'T': {
         int count = buffer_read_be16(b);
+        prf("row schema: %d\n", count);
         for (int i = 0; i < count; i++) {
             buffer name = allocate_buffer(p->h, 10);
             character x;
@@ -284,16 +311,17 @@ static void postgres_input(postgres p, buffer in, register_read reg)
         if (!p->reassembly) {
             p->reassembly = in;
             in = 0;
+        } else {
+            buffer_append(p->reassembly, bref(in, 0), buffer_length(in));
         }
-
+        
         while (p->reassembly) {
             buffer r = p->reassembly;
-            if (buffer_length(r) < 5) return;
-
+            if (buffer_length(r) < 5) break;
             u8 code = buffer_read_byte(r);
             u32 length = buffer_read_be32(r);
             r->start -= 5;
-            if (buffer_length(r) < length) return;
+            if (buffer_length(r) < length) break;
             postgres_message(p, code, wrap_buffer(p->h, bref(r, 5), length - 4));
             r->start += length + 1;
             if (r->start == r->end)  p->reassembly = 0;
@@ -305,7 +333,6 @@ static void postgres_input(postgres p, buffer in, register_read reg)
 static CONTINUATION_1_1(postgres_connected, postgres, endpoint);
 static void postgres_connected(postgres p, endpoint e)
 {
-    prf ("connected\n");
     p->e = e;
     p->reassembly = 0;
     buffer b = allocate_buffer(p->h, 256);
@@ -323,6 +350,48 @@ static void postgres_connected(postgres p, endpoint e)
     apply(e->r, p->self);
 }
 
+static CONTINUATION_6_0(pg_scan_complete, postgres, int, listener, value, value, value);
+static void pg_scan_complete(postgres p, int sig, listener out, value e, value a, value v)
+{
+    if ((sig == s_eAV) && (a == sym(tag))) {
+        pgtable t;
+        if ((t = table_find(p->tables, v))){
+            if (!t->fetched) {
+                // synchronous!?
+                table_dump(p, t, ignore);
+                // cont(p->h, pg_scan_complete, p, sig, out, e, a, v));
+            } else {
+                apply(p->backing->scan, sig, out, e, a, v);
+            }
+        }
+        return;
+    }
+
+    if (sig & a_sig) {
+        table_foreach(p->tables, n, z) {
+            pgtable t = z;
+            if (table_find(t->columns, a) && (!t->fetched)) {
+                //synchronous
+                table_dump(p, t, cont(p->h, pg_scan_complete, p, sig, out, e, a, v));
+                return;
+            }
+            apply(p->backing->scan, sig, out, e, a, v);
+        }
+    }
+}
+                 
+CONTINUATION_1_5(postgres_scan, postgres, int, listener, value, value, value);
+void postgres_scan(postgres p, int sig, listener out, value e, value a, value v)
+{
+    // this is really the same as the reclose thing
+    pg_scan_complete(p, sig, out, e, a, v);
+}
+
+static CONTINUATION_1_1(postgres_commit, postgres, edb)
+static void postgres_commit(postgres p, edb s)
+{
+}
+
 bag connect_postgres(station s, estring user, estring password, estring database)
 {
     heap h = allocate_rolling(pages, sstring("postgres"));
@@ -330,9 +399,16 @@ bag connect_postgres(station s, estring user, estring password, estring database
     p->h = h;
     p->s = initialize;
     p->user = user;
+    p->backing = (bag)create_edb(h, 0);
     p->password = password;
     p->database = database;
+    p->tables = create_value_table(p->h);
     p->table_worklist = allocate_vector(p->h, 10);
+    p->b.scan = cont(h, postgres_scan, p);
+    p->b.commit = cont(h, postgres_commit, p);
+    p->b.listeners = allocate_table(p->h, key_from_pointer, compare_pointer);
+    p->b.block_listeners = allocate_table(p->h, key_from_pointer, compare_pointer);
+    p->b.blocks = allocate_vector(p->h, 0);
     tcp_create_client(h, s, cont(h, postgres_connected, p));
     return (bag)p;
 }

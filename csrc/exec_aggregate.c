@@ -37,17 +37,26 @@ static void do_sort(execf n, perf p,
         table_set(*targets,pk, x);
     }
     pqueue_insert(x, lookup(r, key));
-
     stop_perf(p, pp);
 }
 
 static void build_sort(block bk, bag b, uuid n, execf *e, flushf *f)
 {
+    vector groupings = blookup_vector(bk->h, b, n, sym(groupings));
+    if (!groupings) groupings = allocate_vector(bk->h, 0);
+    vector pk = allocate_vector(bk->h, vector_length(groupings));
+    table *targets = allocate(bk->h, sizeof(table));
+    *targets = create_value_vector_table(bk->h);
+
     *e =  cont(bk->h,
                do_sort,
                cfg_next(bk, b, n),
                register_perf(bk->ev, n),
-               0, 0, 0, 0, 0);
+               targets,
+               blookupv(b, n, sym(value)),
+               blookupv(b, n, sym(return)),
+               groupings,
+               pk);
 }
 
 
@@ -89,8 +98,8 @@ static void do_join(pqueue q, value token, value index, value with,
     pqueue_insert(q, jk);
 }
 
-static execf build_join(heap h, bag b, uuid n)
-{
+ static execf build_join(heap h, bag b, uuid n)
+ {
     return cont(h,
                 do_join,
                 allocate_pqueue(h, order_join_keys),
@@ -99,26 +108,22 @@ static execf build_join(heap h, bag b, uuid n)
                 blookupv(b, n, sym(with)));
 }
 
-
-
-
 typedef double (*dubop)(double, double);
 
-// this should use
+// these should use generic comparator
 static double op_min(double a, double b)
 {
     return (a<b)?a:b;
 }
-
 static double op_max(double a, double b)
 {
     return (a>b)?a:b;
 }
-
 static double op_sum(double a, double b)
 {
     return a+b;
 }
+
 
 static CONTINUATION_2_3(simple_agg_flush, value, value, heap, perf, value *);
 static void simple_agg_flush(value x, value dst, heap h, perf pp, value *r)
@@ -155,8 +160,6 @@ static void build_simple_agg(heap h, bag b, uuid n, execf *e, execf *f)
               x,
               blookupv(b, n, sym(return)));
 }
-
-
 
 typedef struct subagg {
     heap phase;
@@ -270,7 +273,6 @@ static void build_subagg(block bk, bag b, uuid n, execf *e, flushf *f)
     sag->gkey = allocate_vector(bk->h, vector_length(sag->groupings));
     sag->pass = blookupv(b, n,sym(pass));
     sag->regs = bk->regs;
-
     *e = cont(bk->h,
               do_subagg,
               register_perf(bk->ev, n),

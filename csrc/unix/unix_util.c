@@ -11,8 +11,6 @@ decsriptor standardinput = 0;
 decsriptor standardoutput = 1;
 decsriptor standarderror = 2;
 
-station ip_wildcard_service;
-
 void ticks_to_timeval(struct timeval *a, ticks b)
 {
     unsigned long long usec = (b*1000000)>>32;
@@ -67,7 +65,7 @@ buffer read_file(heap h, char *path)
 
 void prf(char *format, ...)
 {
-    string b = allocate_string(pages);
+    string b = allocate_string(tcontext()->short_lived);
     va_list ap;
     string f = alloca_string(format);
     va_start(ap, format);

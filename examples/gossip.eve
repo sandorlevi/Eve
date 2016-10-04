@@ -1,37 +1,82 @@
 listen for packets. these can be vote packets or normal packets, add guys that
 we dont think are in our current view
 ```
+match
+     [#start]
+commit @udp
+     u = [#udp]
+commit @bag
+     [#bag @announcement]
+```
+
+
+udp socket is created, set up the membership instance
+```
+match @udp
+   [#udp]
+   id = u.address
+match   
+    milliseconds = 1000
+    [#peer id:pid]
+    not ([#membership])
+match @bag
+    announcement = [@announcement]
+    
+commit announcement [#piggy id]
+commit @timer [#timeout milliseconds]
+commit m = [#membership timeout:milliseconds id]
+       m.peer += pid
+```   
+
+
+listen for packets. these can be vote packets or normal packets, add guys that
+we dont think are in our current view
+***
  match
    [#packet source:id]
-   [#time frame]
    to = [#timeout]
    m = [#member id]
  commit
-   m.last-heard = frame
    [#member id]
-```
+***
 
 add new peers and accelerate
-   [#packet body:[#member]]
-
-   not ([member #
-   [#timeout random(small)]
+***
+match @udp
+   [#packet body]
+   m = [#membership]
+   not ([member #id])
+commit
+   // how do i know this is going to apply to this timeout?
+   m.timeout := mod[value: random[seed: 0] by: 1000] + 100
+***
 
 
 send announcment.
 ```
+match 
+   // this should be a particular* timer, but setting up the correlation isn't very straightforward
+   [#timer-expire]
+
+match @bag
+   announcement = [@announcement]
+   
 match
-   maxframes = 60 * 5 // 60 frames per second
-   [#time frame]
-   [members #id]
-   > seconds [#timeout]
-   new = max(timeout.ticks *2, maxticks)
+   max-timeout = 40 * 1000
+   // this is really 'sources' which includes seeds and active peers
+   m = [#membership id]
+   f = m.timeout * 2 * random[seed: m.timeout] + 300
+   new_timeout = if f > max-timeout then max-timeout else f
+   x = sort[value: m.peer]
+   p = m.peer
+commit m.timeout := new_timeout
+// presumably this is exactly one bag
+commit @udp [#packet destination:p body:announcement]
+commit @timer [#timeout milliseconds:new_timeout]   
+```
 
-commit
-   timeout.ticks := mod(random, max(maxticks, new) + minticks)
-   m = [udp-message destination:rando kind:"announce"]
-   m.id += id
+if there is a message, send the message 
+```
+match [#packet]
 
-  // send current view
-  // to random peer
 ```

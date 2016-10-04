@@ -29,6 +29,10 @@ static void bagbag_commit(evaluation ev, edb s)
             b = (bag)create_edb(ev->h, 0);
             table_set(ev->t_input, e, b);
         }
+        value v;
+        if ((v = lookupv(s, e, sym(name)))){
+            table_set(ev->scopes, v, e);
+        }
     }
 
     edb_foreach_ev(s, e, sym(bags), v, m) {
@@ -53,11 +57,11 @@ static void bagbag_commit(evaluation ev, edb s)
 CONTINUATION_1_5(bagbag_scan, evaluation, int, listener, value, value, value);
 void bagbag_scan(evaluation ev, int sig, listener out, value e, value a, value v)
 {
-    if (sig & e_sig) {
-    }
-    if (sig & a_sig) {
-    }
-    if (sig & v_sig) {
+    if ((sig == s_eAV) && (a == sym(name))) {
+        value e;
+        if ((e = table_find(ev->scopes, v))) {
+            apply(out, e, a, v, 1, 0);
+        }
     }
 }
 

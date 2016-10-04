@@ -10,6 +10,10 @@ static bag env_bag;
 static int default_behaviour = true;
 static multibag persisted;
 static table scopes;
+static boolean recycle;
+static boolean cluster;
+static buffer cluster_source;
+static vector seeds;
 
 //filesystem like tree namespace
 #define register(__bag, __url, __content, __name)\
@@ -23,14 +27,6 @@ static table scopes;
  }
 
 int atoi( const char *str );
-
-station create_station(unsigned int address, unsigned short port) {
-    void *a = allocate(init,6);
-    unsigned short p = htons(port);
-    memset(a, 0, 6);
-    memcpy (a+4, &p, 2);
-    return(a);
-}
 
 
 extern void init_json_service(http_server, uuid, boolean, bag, char*);
@@ -75,10 +71,15 @@ bag staticdb()
 // this really gets folded in with run_test and just becomes boot-with-eve
 static void start_http_server(buffer source)
 {
-    heap h = allocate_rolling(pages, sstring("command line"));
+    heap h = allocate_rolling(pages, sstring("command line http server"));
     bag compiler_bag;
 
-    process_bag pb  = process_bag_init(persisted);
+    // harsh- no name
+    edb stb = create_edb(h, 0);
+    uuid stid = generate_uuid();
+    table_set(persisted, stid, stb);
+        
+    process_bag pb  = process_bag_init(persisted, enable_tracing);
     uuid pid = generate_uuid();
     table_set(persisted, pid, pb);
 
@@ -92,10 +93,20 @@ static void start_http_server(buffer source)
     table_set(scopes, sym(file), fid);
     table_set(scopes, sym(process), pid);
     table_set(scopes, sym(static), sid);
+    
 
     heap hc = allocate_rolling(pages, sstring("eval"));
-    bag b = compile_eve(h, source, false);
-    evaluation ev = build_evaluation(h, sym(http-server), scopes, persisted, (evaluation_result)ignore, cont(h, handle_error_terminal), b);
+    bag n = compile_eve(h, source, enable_tracing);
+    evaluation ev = build_evaluation(h, sym(http-server), scopes, persisted,
+                                     (evaluation_result)ignore,
+                                     cont(h, handle_error_terminal), n);
+    vector_insert(ev->default_scan_scopes, stid);
+    vector_insert(ev->default_insert_scopes, stid);
+
+    edb in = create_edb(h, 0);
+    apply(in->b.insert, generate_uuid(), sym(tag), sym(initialize), 1, 0);
+    inject_event(ev, (bag)in);
+
     create_http_server(create_station(0, port), ev, pb);
     prf("\n----------------------------------------------\n\nEve started. Running at http://localhost:%d\n\n",port);
 }
@@ -182,8 +193,38 @@ static void do_db(char *x)
     if (len > 2)  database = intern_buffer(vector_get(n, 2));
 
     station s = station_from_string(init, sstring("127.0.0.1:5432"));
-    prf ("%r %r %r\n", user, password, database);
     bag b = connect_postgres(s, user, password, database);
+    uuid p = generate_uuid();
+    table_set(persisted, p, b);
+    prf("postgres database %v\n", database);
+    table_set(scopes, database, p);
+}
+
+
+static void do_recycle(char *x)
+{
+    cluster = true;
+}
+
+
+static void do_cluster(char *x)
+{
+    cluster = true;
+}
+
+static void do_cluster_source(char *x)
+{
+    cluster = true;
+    cluster_source = read_file_or_exit(init, x);
+}
+
+
+// XXX - these could also come out of the static database
+// also, it would probably be operationally useful
+// if we turned up the resolver
+static void do_set_seed(char *x)
+{
+    vector_insert(seeds, station_from_string(init, alloca_wrap_buffer(x, cstring_length(x))));
 }
 
 static void do_logging(char *x)
@@ -211,6 +252,10 @@ static struct command command_body[] = {
     {"t", "tracing", "enable per-statement tracing", false, do_tracing},
     {"T", "threads", "run N additional worker threads", true, start_threads},
     {"d", "data log", "set directory for per-bag log files", true, do_logging},
+    {"r", "recycle", "recycle pages to save VM space and reduce kernel involvement", false, do_recycle},
+    {"c", "cluster", "attach to cluster or start a new cluster", false, do_cluster},
+    {"m", "cluster with source", "attach to cluster or start a new cluster, using the passed file as the protocol source", true, do_cluster_source},    
+    {"S", "seed", "declare the address of an existing cluster member to attach to", true, do_set_seed},    
     //    {"R", "resolve", "implication resolver", false, 0},
 };
 
@@ -223,6 +268,52 @@ static void print_help(char *x)
     exit(0);
 }
 
+// XXX - dont involve so much manual setup in these environments
+// we should have everything we need for a proper boot
+// its kinda mandatory to have a static bag for membership
+static void start_cluster(buffer membership_source)
+{
+    heap h = allocate_rolling(pages, sstring("command line"));
+    bag compiler_bag;
+
+
+    uuid uid = generate_uuid();
+    table_set(scopes, sym(udp), uid);
+    
+    bag sb = (bag)create_edb(init, 0);
+    uuid sid = generate_uuid();
+    table_set(persisted, sid, sb);
+    table_set(scopes, sym(session), sid);
+
+    uuid p = generate_uuid();
+    apply(sb->insert, p, sym(tag), sym(peer), 1, 0);
+    //    create_station(0x7f00001, 3014)
+    apply(sb->insert, p, sym(id), sym(zikki), 1, 0);
+    prf("peer: %v\n", p);
+
+
+    uuid tid = generate_uuid();
+    table_set(scopes, sym(timer), tid);
+
+    heap hc = allocate_rolling(pages, sstring("eval"));
+    bag n = compile_eve(h, membership_source, enable_tracing);
+    evaluation ev = build_evaluation(h, sym(membership), scopes, persisted,
+                                     (evaluation_result)ignore, cont(h, handle_error_terminal), n);
+    bag tb = timer_bag_init(ev);
+    table_set(persisted, tid, tb);
+    bag ub = udp_bag_init(ev);    
+    table_set(persisted, uid, ub);
+    
+    
+    vector_insert(ev->default_scan_scopes, sid);
+    vector_insert(ev->default_insert_scopes, sid);
+    
+    table_set(ub->listeners, ev->run, (void *)1);
+    bag event = (bag)create_edb(init, 0);
+    apply(event->insert, tid, sym(tag), sym(start), 1, 0);
+    inject_event(ev, event);
+}
+
 int main(int argc, char **argv)
 {
     init_runtime();
@@ -230,6 +321,7 @@ int main(int argc, char **argv)
     commands = command_body;
     static_bag = staticdb();
     env_bag = env_init();
+    seeds = allocate_vector(init, 3);
 
     scopes = create_value_table(init);
     persisted = create_value_table(init);
@@ -257,9 +349,19 @@ int main(int argc, char **argv)
 
     // depends on uuid layout, package.c, and other fragilizites
     unsigned char fixed_uuid[12] = {0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
-    estring static_server = blookupv(static_bag, intern_uuid(fixed_uuid), sym(server));
+
+    uuid percent_one = intern_uuid(fixed_uuid);
+    estring static_server = lookupv((edb)static_bag, percent_one, sym(server));
+
     if (default_behaviour)
         start_http_server(alloca_wrap_buffer(static_server->body, static_server->length));
+
+    
+    if (!cluster_source)  {
+        estring static_membership = lookupv((edb)static_bag, percent_one, sym(membership));
+        cluster_source = wrap_buffer(init, static_membership->body, static_membership->length);
+    }
+    if (cluster) start_cluster(cluster_source);
 
     unix_wait();
 }

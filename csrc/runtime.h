@@ -3,6 +3,7 @@
 #include <unix/unix.h>
 #include <types.h>
 
+
 u64 key_of(value);
 boolean equals(value, value);
 
@@ -49,6 +50,15 @@ void print_value(buffer, value);
 typedef struct evaluation *evaluation;
 typedef struct block *block;
 
+
+static value compress_fat_strings(value v)
+{
+    if (type_of(v) == estring_space) {
+        estring x = v;
+        if (x->length > 64) return(sym(...));
+    }
+    return v;
+}
 
 #include <edb.h>
 #include <multibag.h>
@@ -152,7 +162,7 @@ bag init_debug_bag(evaluation ev);
 bag init_bag_bag(evaluation ev);
 
 typedef struct process_bag *process_bag;
-process_bag process_bag_init();
+process_bag process_bag_init(multibag, boolean);
 
 typedef closure(object_handler, bag, uuid);
 object_handler create_json_session(heap h, evaluation ev, endpoint down);
@@ -173,3 +183,13 @@ static inline vector blookup_vector(heap h, bag b, value e, value a)
 {
     return lookup_vector(h, (edb)b, e, a);
 }
+bag connect_postgres(station s, estring user, estring password, estring database);
+bag env_init();
+bag start_log(bag base, char *filename);
+void serialize_edb(buffer dest, edb db);
+bag udp_bag_init();
+bag timer_bag_init();
+
+station create_station(unsigned int address, unsigned short port);
+void init_station();
+extern heap station_heap;
