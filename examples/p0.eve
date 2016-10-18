@@ -1,0 +1,68 @@
+repeat success succeed the parent object
+```
+search
+   [#repeat-complete]
+commit
+
+```
+
+
+repeat fail
+```
+   search r = [#repeat-term text fail]
+   commit r.parent.tail = text
+```
+
+
+repeat success
+```
+search
+   [#repeat-term tail r]
+commit
+   t := [#repeat-term text parent]
+   t <- each
+```
+
+
+repeat start
+```
+search
+  parent = [#repeat completion each text]
+commit
+  t := [#repeat-term text parent]
+  t <- each
+commit @browser
+   [#div text]
+```
+
+
+substring success
+```
+   search s = [#substring head text]
+          // not 100% on this inline syntax
+          head = first[text tail]
+   commit
+         s.tail := tail
+```
+
+substring fail
+```
+   search s = [#substring head text]
+          not(head = first[text tail])
+   commit
+         s.fail := "expected {{head}}"
+```
+
+
+start the pupae
+```
+   bind
+      [#repeat #parse result match: tail:""]
+```
+
+fix the pupae
+```
+  search p = [#parse "azazaz"]
+  commit @browser
+     [#div text:p]
+```

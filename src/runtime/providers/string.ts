@@ -30,7 +30,47 @@ class Concat extends Constraint {
   }
 }
 
+class substring extends Constraint {
+  static AttributeMapping = {
+    "text": 0,
+    "from": 1,
+    "to": 2,
+  }
+  static ReturnMapping = {
+    "value": 0,
+  }
+  // To resolve a proposal, we concatenate our resolved args
+  resolveProposal(proposal, prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let from = 0
+    let text = args[0]
+    let to = text.length
+    if (args[1] != undefined) from = args[1]
+    if (args[2] != undefined) to = args[2]
+    return [text.substring(from, to)];
+  }
 
+  // We accept a prefix if the return is equivalent to concatentating
+  // all the args
+ test(prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let from = 0
+    let text = args[0]
+    let to = text.length
+    if (args[1] != undefined) from = args[1]
+    if (args[2] != undefined) to = args[2]
+
+   return text.substring(from, to) === returns[0];
+  }
+
+  // concat always returns cardinality 1
+  getProposal(tripleIndex, proposed, prefix) {
+    let proposal = this.proposalObject;
+    proposal.providing = proposed;
+    proposal.cardinality = 1;
+    return proposal;
+  }
+}
 
 class Split extends Constraint {
   static AttributeMapping = {
@@ -101,3 +141,4 @@ class Split extends Constraint {
 
 providers.provide("concat", Concat);
 providers.provide("split", Split);
+providers.provide("substring", substring);
