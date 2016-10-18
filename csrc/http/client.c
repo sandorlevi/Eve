@@ -28,7 +28,7 @@ static void client_connected(client c, endpoint e)
     apply(e->r, response_header_parser(c->h, c->response));
 }
 
-client open_http_client(heap h, bag b, uuid request, http_handler response)
+client open_http_client(heap h, edb b, uuid request, http_handler response)
 {
     station a;
     estring host = lookupv((edb)b, request, sym(host));

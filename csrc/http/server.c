@@ -11,9 +11,9 @@ struct http_server {
 typedef struct session {
     // the evaluator is throwing away our headers,
     // so we stash them here and cant execute piplined or
-    // out of order
-    bag last_headers;
-    bag last_headers_root;
+    // out of order -- xx fix
+    edb last_headers;
+    edb last_headers_root;
 
     heap h;
     uuid self;
@@ -22,13 +22,14 @@ typedef struct session {
     endpoint e;
 } *session;
 
-static CONTINUATION_1_3(dispatch_request, session, bag, uuid, register_read);
+static CONTINUATION_1_3(dispatch_request, session, edb, uuid, register_read);
 
-void http_send_response(http_server s, bag b, uuid root)
+void http_send_response(http_server s, edb b, uuid root)
 {
-    bag shadow = (bag)b;
+    edb shadow = (edb)b;
     estring body;
     session hs = table_find(s->sessions, root);
+    // xxx - root should be per-request, not per-connection
 
     // type checking or coersion
     value response = lookupv((edb)b, root, sym(response));
@@ -38,7 +39,7 @@ void http_send_response(http_server s, bag b, uuid root)
         if ((body = lookupv((edb)b, response, sym(content))) && (type_of(body) == estring_space)) {
             // dont shadow because http header can't handle it because edb_foreach
             //                shadow = (bag)create_edb(hs->h, 0, build_vector(hs->h, s));
-            apply(shadow->insert, header, sym(Content-Length), box_float(body->length), 1, 0);
+            edb_insert(shadow, header, sym(Content-Length), box_float(body->length), 0); 
         }
 
         http_send_header(hs->e->w, shadow, header,
@@ -58,7 +59,7 @@ void http_send_response(http_server s, bag b, uuid root)
 }
 
 
-static void dispatch_request(session s, bag b, uuid i, register_read reg)
+static void dispatch_request(session s, edb b, uuid i, register_read reg)
 {
     buffer *c;
 
@@ -69,7 +70,7 @@ static void dispatch_request(session s, bag b, uuid i, register_read reg)
         return;
     }
 
-    bag event = (bag)create_edb(s->h, build_vector(s->h, b));
+    edb event = create_edb(s->h, build_vector(s->h, b));
     uuid x = generate_uuid();
 
     // multi- sadness
@@ -77,11 +78,12 @@ static void dispatch_request(session s, bag b, uuid i, register_read reg)
     s->last_headers_root = i;
     table_set(s->parent->sessions, x, s);
 
-    apply(event->insert, x, sym(tag), sym(http-request), 1, 0);
-    apply(event->insert, x, sym(request), i, 1, 0);
-    apply(event->insert, x, sym(connection), s->self, 1, 0);
+    edb_insert(event, x, sym(tag), sym(http-request), 0);
+    edb_insert(event, x, sym(request), i, 0);
+    edb_insert(event, x, sym(connection), s->self, 0);
 
-    inject_event(s->parent->ev,event);
+    // should be a commit i think
+    //    inject_event(s->parent->ev, event);
     s->e->r = reg;
 }
 
@@ -103,48 +105,40 @@ void new_connection(http_server s,
     apply(e->r, request_header_parser(h, cont(h, dispatch_request, hs)));
 }
 
-static CONTINUATION_3_3(http_eval_result, http_server, process_bag, uuid,
-                        multibag, multibag, boolean);
-static void http_eval_result(http_server s, process_bag pb, uuid where,
-                             multibag t, multibag f, boolean status)
+static CONTINUATION_2_3(http_eval_result, http_server, process_bag, uuid,
+                        multibag, boolean);
+static void http_eval_result(http_server s,
+                             process_bag pb,
+                             uuid where,
+                             multibag t,
+                             boolean status)
 {
-    bag b;
+    // dig out of t?
+    edb b;
 
-    if (!t || (!(b=table_find(t, where)))) {
-        prf("empty http eval result t: %d f: %d %b\n",
-            t?table_elements(t):0,
-            f?table_elements(f):0,
-            (f && table_find(f, where))?edb_dump(init,
-                                                 ((edb)table_find(f, where)))
-            :sstring("empty"));
-
-
-    } else {
-        edb_foreach_ev((edb)b, e, sym(response), response, m){
-            // xxx we're using e as a very weak correlator to the connection
-            http_send_response(s, b, e);
-            return;
-        }
-
-        edb_foreach_ev((edb)b, e, sym(upgrade), child, m){
-            session hs = table_find(s->sessions, e);
-            heap jh = allocate_rolling(init, sstring("json session"));
-            evaluation ev = process_resolve(pb, child);
-            if (ev) {
-                endpoint ws =  websocket_send_upgrade(hs->h, hs->e,
-                                      hs->last_headers,
-                                      hs->last_headers_root);
-                parse_json(jh, ws, create_json_session(jh, ev, ws));
-                bag session_connect = (bag)create_edb(jh, 0);
-
-                apply(session_connect->insert,
-                      generate_uuid(),
-                      sym(tag),
-                      sym(session-connect), 1, 0);
-                inject_event(ev, session_connect);
-            } else {
-                prf ("unable to correlate upgrade process\n");
-            }
+    edb_foreach_ev((edb)b, e, sym(response), response){
+        http_send_response(s, b, e);
+        return;
+    }
+    
+    edb_foreach_ev((edb)b, e, sym(upgrade), child){
+        session hs = table_find(s->sessions, e);
+        heap jh = allocate_rolling(init, sstring("json session"));
+        evaluation ev = process_resolve(pb, child);
+        if (ev) {
+            endpoint ws =  websocket_send_upgrade(hs->h, hs->e,
+                                                  hs->last_headers,
+                                                  hs->last_headers_root);
+            parse_json(jh, ws, create_json_session(jh, ev, ws));
+            edb session_connect = create_edb(jh, 0);
+            
+            edb_insert(session_connect,
+                       generate_uuid(),
+                       sym(tag),
+                       sym(session-connect), 0);
+            //  inject_event(ev, session_connect);
+        } else {
+            prf ("unable to correlate upgrade process\n");
         }
     }
 }

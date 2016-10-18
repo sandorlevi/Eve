@@ -1,8 +1,8 @@
 typedef struct http_server *http_server;
 
-void http_send_request(buffer_handler w, bag b, uuid n);
+void http_send_request(buffer_handler w, edb b, uuid n);
 
-void http_send_response(http_server hs, bag b, uuid root);
+void http_send_response(http_server hs, edb b, uuid root);
 
 string base64_encode(heap h, buffer x);
 
@@ -20,7 +20,7 @@ void register_static_content(http_server h, char *url, char *content_type, buffe
 // i/o path for connection switching protocols...this needs to
 // interact with a connection cache underneath...need a different
 // siganture for more standard request/response guys
-typedef closure(http_handler, bag, uuid, register_read);
+typedef closure(http_handler, edb, uuid, register_read);
 
 endpoint websocket_send_upgrade(heap h,
                                 endpoint down,
@@ -40,12 +40,12 @@ reader response_header_parser(heap, http_handler);
 reader request_header_parser(heap, http_handler);
 
 typedef struct client *client;
-client open_http_client(heap h, bag s, uuid request, http_handler response);
+client open_http_client(heap h, edb s, uuid request, http_handler response);
 
-void http_send_header(buffer_handler w, bag b, uuid n, value first, value second, value third);
+void http_send_header(buffer_handler w, edb b, uuid n, value first, value second, value third);
 
 endpoint websocket_client(heap h, bag request, uuid rid);
 
-buffer json_encode(heap, bag b, uuid n);
+buffer json_encode(heap h, edb b, uuid n);
 endpoint http_ws_upgrade(http_server s, bag b, uuid root);
 http_server create_http_server(station p, evaluation ev, process_bag pb);

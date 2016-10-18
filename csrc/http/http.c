@@ -26,7 +26,7 @@ typedef enum {
 typedef struct header_parser {
     heap h;
     http_handler up;
-    bag b;
+    edb b;
     uuid u, hu;
     buffer term;
     estring name;
@@ -35,17 +35,17 @@ typedef struct header_parser {
     reader self;
 } *header_parser;
 
-void http_send_header(buffer_handler w, bag b, uuid n, value first, value second, value third)
+void http_send_header(buffer_handler w, edb b, uuid n, value first, value second, value third)
 {
     buffer out = allocate_buffer(init, 64);
     bprintf(out, "%r %r %r\r\n", first, second, third);
-    edb_foreach_av((edb)b, n, a, v, c)
+    edb_foreach_av((edb)b, n, a, v)
         bprintf(out, "%r: %r\r\n", a, v);
     bprintf(out, "\r\n");
     apply(w, out, ignore);
 }
 
-void http_send_request(buffer_handler w, bag b, uuid n)
+void http_send_request(buffer_handler w, edb b, uuid n)
 {
     http_send_header(w,
                      b,
@@ -84,7 +84,7 @@ static void parse_http_header(header_parser p, buffer b, register_read reg)
             case method:
             case url:
             case version:
-                apply(p->b->insert, p->u, p->headers[p->s], intern_buffer(p->term), 1, 0);
+                edb_insert(p->b, p->u, p->headers[p->s], intern_buffer(p->term), 0);
                 p->s++;
                 break;
             case name:
@@ -93,7 +93,7 @@ static void parse_http_header(header_parser p, buffer b, register_read reg)
                 break;
             case property:
                 p->s = skipo;
-                apply(p->b->insert, p->hu, p->name, intern_buffer(p->term), 1, 0);
+                edb_insert(p->b, p->hu, p->name, intern_buffer(p->term), 0);
                 break;
             default:
                 p->s++;
@@ -112,10 +112,11 @@ reader new_parser(heap h, http_handler result, value a, value b, value c)
     header_parser p = allocate(h, sizeof(struct header_parser));
     p->h = h;
     p->up = result;
-    p->b = (bag)create_edb(h, 0);
+    p->b = create_edb(h, 0);
     p->s = 0;
     p->u = generate_uuid();
     p->hu = generate_uuid();
+    
     apply(p->b->insert, p->u, sym(headers), p->hu, 1, 0);
     p->headers[0] = a;
     p->headers[1] = b;

@@ -10,20 +10,17 @@ void compile_into_bag(evaluation ev, bag b, estring code) {
     //        vector_insert(b->blocks, block);
     //    }
 
-    //    table_foreach(b->block_listeners, listener, _) {
-    //        apply((bag_block_handler)listener, b, blocks, 0);
-    //    }
 }
 
-static CONTINUATION_1_5(bagbag_insert, evaluation, value, value, value, multiplicity, uuid);
-static void bagbag_insert(evaluation ev, value e, value a, value v, multiplicity m, uuid bku)
+static CONTINUATION_1_4(bagbag_insert, evaluation, value, value, value, uuid bku);
+static void bagbag_insert(evaluation ev, value e, value a, value v, uuid bku)
 {
 }
 
 static CONTINUATION_1_1(bagbag_commit, evaluation, edb)
 static void bagbag_commit(evaluation ev, edb s)
 {
-    edb_foreach_e(s, e, sym(tag), sym(bag), m) {
+    edb_foreach_e(s, e, sym(tag), sym(bag)) {
         bag b = table_find(ev->t_input, e);
         if(!b) {
             b = (bag)create_edb(ev->h, 0);
@@ -60,7 +57,7 @@ void bagbag_scan(evaluation ev, int sig, listener out, value e, value a, value v
     if ((sig == s_eAV) && (a == sym(name))) {
         value e;
         if ((e = table_find(ev->scopes, v))) {
-            apply(out, e, a, v, 1, 0);
+            apply(out, e, a, v, 0);
         }
     }
 }
@@ -72,7 +69,6 @@ bag init_bag_bag(evaluation ev)
     b->scan = cont(ev->h, bagbag_scan, ev);
     b->commit = cont(ev->h, bagbag_commit, ev);
     b->listeners = allocate_table(ev->h, key_from_pointer, compare_pointer);
-    b->block_listeners = allocate_table(ev->h, key_from_pointer, compare_pointer);
     b->blocks = allocate_vector(ev->h, 0);
     return b;
 }

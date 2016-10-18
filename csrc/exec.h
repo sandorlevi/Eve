@@ -103,7 +103,7 @@ static inline void stop_perf(perf p, perf pp)
 }
 
 // xxx - there is probably a better way to wire this
-static execf cfg_next(block bk, bag g, uuid n)
+static execf cfg_next(evaluation bk, bag g, uuid n)
 {
     return(table_find(bk->nmap, blookupv(g, n, sym(next))));
 }

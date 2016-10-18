@@ -528,18 +528,15 @@ void block_close(block bk)
     destroy(bk->h);
 }
 
-block build(evaluation ev, bag b, uuid root)
+void build(evaluation ev, bag b, uuid root)
 {
     heap h = allocate_rolling(pages, sstring("build"));
-    block bk = allocate(h, sizeof(struct block));
-    bk->ev = ev;
-    bk->regs = (int)*(double *)blookupv(b, root, sym(regs));
-    bk->h = h;
-    bk->name = blookupv(b, root, sym(name));
+    ev->regs = (int)*(double *)blookupv(b, root, sym(regs));
+    ev->h = h;
+    ev->name = blookupv(b, root, sym(name));
     // this is only used during building
-    bk->nmap = allocate_table(bk->h, key_from_pointer, compare_pointer);
-    bk->start = blookupv(b, root, sym(start));
-    force_node(bk, b, bk->start);
-    bk->head = table_find(bk->nmap, bk->start);
-    return bk;
+    ev->nmap = allocate_table(ev->h, key_from_pointer, compare_pointer);
+    ev->start = blookupv(b, root, sym(start));
+    force_node(ev, b, ev->start);
+    ev->head = table_find(ev->nmap, ev->start);
 }

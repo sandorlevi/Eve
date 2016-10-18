@@ -11,19 +11,6 @@ table level_fetch(heap h, table current, value key) {
     return next_level;
 }
 
-multiplicity count_of(edb b, value e, value a, value v)
-{
-    table al = value_table_find(b->eav, e);
-    if(al) {
-        table vl = value_table_find(al, a);
-        if(vl) {
-            leaf c = value_table_find(vl, v);
-            if (c) return c->m;
-        }
-    }
-    return 0;
-}
-
 value lookupv(edb b, uuid e, estring a)
 {
     table al = value_table_find(b->eav, e);
@@ -31,8 +18,7 @@ value lookupv(edb b, uuid e, estring a)
         table vl = value_table_find(al, a);
         if(vl)
             table_foreach(vl, v, terminal)
-                if(((leaf)terminal)->m != 0)
-                    return v;
+                return v;
     }
 
     vector_foreach(b->includes, i) {
@@ -50,8 +36,7 @@ static void lookup_vector_internal(vector dest, edb b, uuid e, estring a)
         table vl = value_table_find(al, a);
         if(vl)
             table_foreach(vl, v, terminal)
-                if(((leaf)terminal)->m != 0)
-                    vector_insert(dest, v);
+                vector_insert(dest, v);
     }
 
     vector_foreach(b->includes, i) {
@@ -84,7 +69,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
             table_foreach((table)al, a, vl) {
                 table_foreach((table)vl, v, f) {
                     leaf final = f;
-                    apply(out, e, a, v, final->m, final->block_id);
+                    apply(out, e, a, v, final->block_id);
                 }
             }
         }
@@ -98,7 +83,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
                 if(vl) {
                     leaf final;
                     if ((final = value_table_find(vl, v)) != 0){
-                        apply(out, e, a, v, final->m, final->block_id);
+                        apply(out, e, a, v, final->block_id);
                     }
                 }
             }
@@ -114,7 +99,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
                     table_foreach(vl, v, f) {
                         leaf final = f;
                         if(final)
-                            apply(out, e, a, v, final->m, final->block_id);
+                            apply(out, e, a, v, final->block_id);
                     }
                 }
             }
@@ -129,7 +114,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
                     table_foreach((table)vl, v, f){
                         leaf final = f;
                         if(final)
-                            apply(out, e, a, v, final->m, final->block_id);
+                            apply(out, e, a, v, final->block_id);
                     }
                 }
             }
@@ -145,7 +130,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
                     table_foreach(vl, e, f) {
                         leaf final = f;
                         if(final)
-                            apply(out, e, a, v, final->m, final->block_id);
+                            apply(out, e, a, v, final->block_id);
                     }
                 }
             }
@@ -160,7 +145,7 @@ static void edb_scan(edb b, int sig, listener out, value e, value a, value v)
                     table_foreach((table)vl, e, f) {
                         leaf final = f;
                         if(final)
-                            apply(out, e, a, v, final->m, final->block_id);
+                            apply(out, e, a, v, final->block_id);
                     }
                 }
             }
@@ -177,8 +162,8 @@ static void edb_scan_sync(edb b, int sig, listener out, value e, value a, value 
   edb_scan(b, sig, out, e, a, v);
 }
 
-static CONTINUATION_1_5(edb_insert, edb, value, value, value, multiplicity, uuid);
-static void edb_insert(edb b, value e, value a, value v, multiplicity m, uuid block_id)
+// should return status?
+static void edb_insert(edb b, value e, value a, value v, uuid block_id)
 {
     leaf final;
 
@@ -189,7 +174,6 @@ static void edb_insert(edb b, value e, value a, value v, multiplicity m, uuid bl
     if (!(final = value_table_find(al, v))){
         final = allocate(b->h, sizeof(struct leaf));
         final->block_id = block_id;
-        final->m = m;
         table_set(al, v, final);
 
         // AVE
@@ -197,23 +181,15 @@ static void edb_insert(edb b, value e, value a, value v, multiplicity m, uuid bl
         table avl = level_fetch(b->h, aal, v);
         table_set(avl, e, final);
         b->count++;
-    } else {
-        final->m += m;
-
-        if (!final->m) {
-            table_set(al, v, 0);
-            table al = level_fetch(b->h, b->ave, a);
-            table vl = level_fetch(b->h, al, v);
-            table_set(vl, e, 0);
-        }
-    }
+    } 
 }
 
 static CONTINUATION_1_1(edb_commit, edb, edb);
 static void edb_commit(edb b, edb source)
 {
-    edb_foreach(source, e, a, v, m, block_id) 
-        edb_insert(b, e, a, v, m, block_id);
+    edb_foreach(source, e, a, v, block_id) 
+        edb_insert(b, e, a, v, block_id);
+    // activate the listeners
 }
 
 static int buffer_unicode_length(buffer buf, int start)
@@ -230,14 +206,11 @@ static int buffer_unicode_length(buffer buf, int start)
 edb create_edb(heap h, vector includes)
 {
     edb b = allocate(h, sizeof(struct edb));
-    b->b.insert = cont(h, edb_insert, b);
     b->b.scan = cont(h, edb_scan, b);
     b->b.scan_sync = cont(h, edb_scan_sync, b);
     //    b->b.u = u;
     b->b.listeners = allocate_table(h, key_from_pointer, compare_pointer);
     b->b.commit = cont(h, edb_commit, b);
-    b->b.blocks = allocate_vector(h, 1);
-    b->b.block_listeners = allocate_table(h, key_from_pointer, compare_pointer);
     b->h = h;
     b->count = 0;
     b->eav = create_value_table(h);

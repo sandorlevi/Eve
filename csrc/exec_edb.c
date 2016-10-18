@@ -25,19 +25,17 @@ static vector uuid_set(block bk, vector scopes)
 }
 
 
-static CONTINUATION_7_5(scan_listener,
+static CONTINUATION_7_4(scan_listener,
                         execf, heap, value *, perf, value, value, value,
-                        value, value, value, multiplicity, uuid);
+                        value, value, value, uuid);
 static void scan_listener(execf n, heap h, value *r, perf p,
                           value er, value ar, value vr,
-                          value e, value a, value v, multiplicity m, uuid block_id)
+                          value e, value a, value v, uuid block_id)
 {
-    if (m > 0) {
-        store(r, er, e);
-        store(r, ar, a);
-        store(r, vr, v);
-        apply(n, h, p, r);
-    }
+    store(r, er, e);
+    store(r, ar, a);
+    store(r, vr, v);
+    apply(n, h, p, r);
 }
 
 #define sigbit(__sig, __p, __r) ((sig&(1<<__p))? register_ignore: __r)
@@ -52,6 +50,8 @@ static void do_scan(block bk, perf p, execf n,
     start_perf(p);
 
     // xxx scopes can contain regs here
+    // scan should include T
+
     merge_scan(bk->ev, scopes, sig,
                cont(h, scan_listener, n, h, r, p,
                     sigbit(sig, 2, e), sigbit(sig, 1, a), sigbit(sig, 0, v)),
@@ -90,7 +90,6 @@ typedef struct insert  {
     multibag *target;
     heap *h;
     vector scopes;
-    int deltam;
     value e, a, v;
     boolean is_t;
 } *insert;
@@ -102,20 +101,22 @@ static void do_insert(insert ins,
 {
     start_perf(ins->p);
 
+    // should be a single scope?
     vector_foreach(ins->scopes, u)
         multibag_insert(ins->target, *ins->h, u,
                         lookup(r, ins->e),
                         lookup(r, ins->a),
                         lookup(r, ins->v),
-                        ins->deltam, ins->bk->name);
+                        ins->bk->id);
 
-
+    // we should not continue if the fact already existed
+    // in reality this needs to be determined on a per-object-extensional-signature level
     apply(ins->n, h, ins->p, r);
     stop_perf(ins->p, pp);
 }
 
 
-static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int deltam)
+static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f)
 {
     value mt = blookupv(b, n, sym(mutateType));
     insert ins = allocate(bk->h, sizeof(struct insert));
@@ -140,7 +141,6 @@ static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int del
     ins->e = blookupv(b, n, sym(e));
     ins->a = blookupv(b, n, sym(a));
     ins->v = blookupv(b, n, sym(v));
-    ins->deltam = deltam;
     ins->scopes = vector_length(name_scopes)?uuid_set(bk, name_scopes):bk->ev->default_insert_scopes;
     *e = cont(bk->h, do_insert, ins);
 }
@@ -148,40 +148,30 @@ static void build_mutation(block bk, bag b, uuid n, execf *e, flushf *f, int del
 
 static void build_insert(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    build_mutation(bk, b, n, e, f, 1);
+    build_mutation(bk, b, n, e, f);
 }
 
 static void build_remove(block bk, bag b, uuid n, execf *e, flushf *f)
 {
-    build_mutation(bk, b, n, e, f, -1);
+    prf("whoops, remove under construction\n");
 }
 
-static CONTINUATION_4_5(each_t_solution_remove,
+static CONTINUATION_4_4(each_t_solution_remove,
                         evaluation, heap, uuid, multibag *,
-                        value, value, value, multiplicity, uuid);
+                        value, value, value, uuid);
 static void each_t_solution_remove(evaluation ev, heap h, uuid u, multibag *target,
-                                   value e, value a, value v, multiplicity m, uuid block_id)
+                                   value e, value a, value v, uuid block_id)
 {
-    if (m >0)
-        multibag_insert(target, h, u, e, a, v, -1, block_id);
+    //        multibag_insert(target, h, u, e, a, v, block_id);
 }
 
-static CONTINUATION_4_5(each_t_remove,
+static CONTINUATION_4_4(each_t_remove,
                         evaluation, heap, uuid, multibag *,
-                        value, value, value, multiplicity, uuid);
+                        value, value, value, uuid);
 static void each_t_remove(evaluation ev, heap h, uuid u, multibag *target,
-                          value e, value a, value v, multiplicity m, uuid block_id)
+                          value e, value a, value v, uuid block_id)
 {
-    if ((m >0) && ev->t_input){
-        edb base = table_find(ev->t_input, u);
-        if (base && (count_of(base, e, a, v) > 0)) {
-            if (ev->t_solution) {
-                edb t_shadow = table_find(ev->t_solution, u);
-                if (t_shadow && (count_of(t_shadow, e, a, v) == -1)) return;
-            }
-            multibag_insert(target, h, u, e, a, v, -1, block_id);
-        }
-    }
+    prf("remove has been deconstructed into a single crumb and a smear of aoli\n");
 }
 
 static CONTINUATION_8_3(do_set, block, perf, execf,
@@ -209,7 +199,7 @@ static void do_set(block bk, perf p, execf n,
 
     vector_foreach(scopes, u) {
         if (vv != register_ignore)
-            multibag_insert(target, bk->ev->h, u, ev, av, vv, 1, bk->name);
+            multibag_insert(target, bk->ev->h, u, ev, av, vv, bk->name);
 
         if ((b = table_find(bk->ev->t_input, u))) {
             apply(b->scan, s_EAv,

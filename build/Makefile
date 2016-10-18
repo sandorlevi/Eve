@@ -53,8 +53,8 @@ UNIX_H = unix_internal.h unix.h
 CORE = buffer.o table.o vector.o format.o rolling.o string.o pqueue.o timer.o field.o
 CORE_H = bswap.h pqueue.h vector.h buffer.h heap.h timer.h continuation.h core.h string.h table.h atomic.h
 EXEC = exec_expression.o exec_edb.o exec_string.o exec_aggregate.o exec.o
-EVE = process_bag.o bag_bag.o debug_bag.o runner.o envbag.o json_request.o staticdb.o luanne.o postgres.o\
-      timer_bag.o runner.o json_request.o filebag.o $(EXEC) udpbag.o
+EVE = bag_bag.o runner.o envbag.o json_request.o staticdb.o luanne.o postgres.o\
+      runner.o json_request.o filebag.o $(EXEC) udpbag.o
 RUNTIME = init.o uuid.o estring.o types.o path.o serialize.o log.o edb.o station.o $(UNIX) $(CORE)
 RUNTIME_H = luanne.h runtime.h estring.h number.h types.h exec.h edb.h multibag.h thread.h
 HTTP = server.o websocket.o base64.o sha1.o json.o client.o http.o hmac_sha2.o sha256.o md5.o

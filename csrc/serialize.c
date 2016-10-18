@@ -85,7 +85,7 @@ void serialize_value(buffer dest, value v)
 
 void serialize_edb(buffer dest, edb db)
 {
-    edb_foreach(db, e, a, v, m, u) {
+    edb_foreach(db, e, a, v, u) {
         /*
          * seems excessive to frame every triple, but not being able to detect
          * synch loss in a dense encoding is a real weak point, imagine throwing
@@ -99,10 +99,11 @@ void serialize_edb(buffer dest, edb db)
     }
 }
 
-static void move(buffer d, buffer s)
+static inline void move(buffer d, buffer s, u64 length)
 {
-    buffer_write_byte(d, *(u8 *)bref(s, 0));
-    s->start++;
+    buffer_extend(d, length);
+    memcpy(d->contents + d->end, s->contents + s->start, length);
+    s->start += length;
 }
 
 // endian
@@ -111,6 +112,12 @@ static value intern_float(void *x) {return box_float(*(double *)x);}
 static CONTINUATION_1_2(deserialize_input, deserialize, buffer, thunk);
 static void deserialize_input(deserialize d, buffer b, thunk finished)
 {
+    if ((b == 0) || (buffer_length(b) == 0)) {
+        // error on left over contents?
+        apply(finished);
+        return;
+    }
+
     // find the object and the length
     while (d->partial || b) {
         if (d->partial) {
@@ -118,14 +125,31 @@ static void deserialize_input(deserialize d, buffer b, thunk finished)
                 // should be quite small here, and there are ways to shortcut this if
                 // there is a really a problem. just trying to avoid expanding partial
                 // and copying b just for a lousy length field
-            if (b && (d->translate == 0))
-                move(d->partial, b);
+            if (b)
+                if (d->translate) {
+                    // off by the type header?
+                    // for long objects it would be nice if they could be discontiguous
+                    // if they are about to be copied anywyas
+                    move(d->partial, b, d->length - buffer_length(b));
+                }
+                else move(d->partial, b, 1);
+
         } else {
             d->partial = b;
             b = 0;
         }
         
-        if (!d->translate) {
+        if (d->translate) {
+            if (buffer_length(d->partial) >= d->length) {
+                apply(d->handler, d->translate(bref(d->partial, 0), d->length));
+                if ((d->partial->start += d->length) ==  d->partial->end) {
+                    // free
+                    d->partial = 0;
+                }
+                d->translate = 0;
+                d->length = 0;
+            } else return;
+        } else {
             byte z = *(u8 *)bref(d->partial, 0);
             
             // uuid case - since we used a single bit, the tag is included
@@ -154,18 +178,6 @@ static void deserialize_input(deserialize d, buffer b, thunk finished)
                 prf("serialization error\n");
             }
             d->partial->start++;
-        } else {
-            if (d->translate) {
-                if (buffer_length(d->partial) >= d->length) {
-                    apply(d->handler, d->translate(bref(d->partial, 0), d->length));
-                    if ((d->partial->start += d->length) ==  d->partial->end) {
-                        // free
-                        d->partial = 0;
-                    }
-                    d->translate = 0;
-                    d->length = 0;
-                }
-            } else return;
         }
     }
     apply(finished);

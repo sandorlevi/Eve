@@ -79,9 +79,9 @@ static void start_http_server(buffer source)
     uuid stid = generate_uuid();
     table_set(persisted, stid, stb);
         
-    process_bag pb  = process_bag_init(persisted, enable_tracing);
-    uuid pid = generate_uuid();
-    table_set(persisted, pid, pb);
+    //    process_bag pb  = process_bag_init(persisted, enable_tracing);
+    //    uuid pid = generate_uuid();
+    //    table_set(persisted, pid, pb);
 
     bag fb = (bag)filebag_init(sstring(pathroot));
     uuid fid = generate_uuid();
@@ -91,23 +91,23 @@ static void start_http_server(buffer source)
     table_set(persisted, sid, static_bag);
 
     table_set(scopes, sym(file), fid);
-    table_set(scopes, sym(process), pid);
+    //    table_set(scopes, sym(process), pid);
     table_set(scopes, sym(static), sid);
     
 
     heap hc = allocate_rolling(pages, sstring("eval"));
     bag n = compile_eve(h, source, enable_tracing);
-    evaluation ev = build_evaluation(h, sym(http-server), scopes, persisted,
-                                     (evaluation_result)ignore,
-                                     cont(h, handle_error_terminal), n);
-    vector_insert(ev->default_scan_scopes, stid);
-    vector_insert(ev->default_insert_scopes, stid);
+    
+    evaluation ev;
+    //    evaluation ev = build_evaluation(h, n);
+    //    vector_insert(ev->default_scan_scopes, stid);
+    //    vector_insert(ev->default_insert_scopes, stid);
 
     edb in = create_edb(h, 0);
-    apply(in->b.insert, generate_uuid(), sym(tag), sym(initialize), 1, 0);
-    inject_event(ev, (bag)in);
+    edb_insert(in, generate_uuid(), sym(tag), sym(initialize), 0);
+    //    inject_event(ev, (bag)in);
 
-    create_http_server(create_station(0, port), ev, pb);
+    create_http_server(create_station(0, port), ev, 0);
     prf("\n----------------------------------------------\n\nEve started. Running at http://localhost:%d\n\n",port);
 }
 
@@ -182,7 +182,7 @@ static void do_db(char *x)
     vector n = split(init, args, ':');
     // wrap environment
     estring user;
-    edb_foreach_ev((edb)env_bag, e, sym(USER), v, m)
+    edb_foreach_ev((edb)env_bag, e, sym(USER), v)
         user = v;
     estring password = sym();
     int len = vector_length(n);
@@ -233,9 +233,18 @@ static void do_logging(char *x)
         if (name[0] != '.') {
             edb e = create_edb(init, 0);
             bag log = start_log((bag)e, x);
-            table_set(scopes, x, log);
+            table_set(scopes, name, log);
         }
     }
+}
+
+static void do_logbag(char *x)
+{
+    uuid change_me_to_permanent = generate_uuid();
+    edb e = create_edb(init, 0);
+    bag log = start_log((bag)e, x);
+    table_set(scopes, x, change_me_to_permanent);
+    table_set(persisted, change_me_to_permanent, log);
 }
 
 static command commands;
@@ -251,7 +260,8 @@ static struct command command_body[] = {
     {"h", "help", "print help", false, print_help},
     {"t", "tracing", "enable per-statement tracing", false, do_tracing},
     {"T", "threads", "run N additional worker threads", true, start_threads},
-    {"d", "data log", "set directory for per-bag log files", true, do_logging},
+    {"d", "logdir", "set directory for per-bag log files", true, do_logging},
+    {"f", "log", "set directory for per-bag log files", true, do_logbag},
     {"r", "recycle", "recycle pages to save VM space and reduce kernel involvement", false, do_recycle},
     {"c", "cluster", "attach to cluster or start a new cluster", false, do_cluster},
     {"m", "cluster with source", "attach to cluster or start a new cluster, using the passed file as the protocol source", true, do_cluster_source},    
@@ -280,15 +290,14 @@ static void start_cluster(buffer membership_source)
     uuid uid = generate_uuid();
     table_set(scopes, sym(udp), uid);
     
-    bag sb = (bag)create_edb(init, 0);
+    edb sb = create_edb(init, 0);
     uuid sid = generate_uuid();
     table_set(persisted, sid, sb);
     table_set(scopes, sym(session), sid);
 
     uuid p = generate_uuid();
-    apply(sb->insert, p, sym(tag), sym(peer), 1, 0);
+    edb_insert(sb, p, sym(tag), sym(peer), 0);
     //    create_station(0x7f00001, 3014)
-    apply(sb->insert, p, sym(id), sym(zikki), 1, 0);
     prf("peer: %v\n", p);
 
 
@@ -297,21 +306,20 @@ static void start_cluster(buffer membership_source)
 
     heap hc = allocate_rolling(pages, sstring("eval"));
     bag n = compile_eve(h, membership_source, enable_tracing);
-    evaluation ev = build_evaluation(h, sym(membership), scopes, persisted,
-                                     (evaluation_result)ignore, cont(h, handle_error_terminal), n);
-    bag tb = timer_bag_init(ev);
-    table_set(persisted, tid, tb);
-    bag ub = udp_bag_init(ev);    
-    table_set(persisted, uid, ub);
+    //    evaluation ev = build_evaluation(h, sym(membership), scopes, persisted,
+    //                                     (evaluation_result)ignore, cont(h, handle_error_terminal), n);
+    //     bag tb = timer_bag_init(ev);
+    //    bag ub = udp_bag_init(ev);    
+    //    table_set(persisted, uid, ub);
     
     
-    vector_insert(ev->default_scan_scopes, sid);
-    vector_insert(ev->default_insert_scopes, sid);
+    //    vector_insert(ev->default_scan_scopes, sid);
+    //    vector_insert(ev->default_insert_scopes, sid);
     
-    table_set(ub->listeners, ev->run, (void *)1);
-    bag event = (bag)create_edb(init, 0);
-    apply(event->insert, tid, sym(tag), sym(start), 1, 0);
-    inject_event(ev, event);
+    //    table_set(ub->listeners, ev->run, (void *)1);
+    //    bag event = (bag)create_edb(init, 0);
+    //    apply(event->insert, tid, sym(tag), sym(start), 1, 0);
+    //    inject_event(ev, event);
 }
 
 int main(int argc, char **argv)

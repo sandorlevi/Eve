@@ -27,8 +27,8 @@ evaluation process_resolve(process_bag pb, uuid e)
     return 0;
 }
 
-static CONTINUATION_1_5(process_bag_insert, process_bag, value, value, value, multiplicity, uuid);
-static void process_bag_insert(process_bag f, value e, value a, value v, multiplicity m, uuid bku)
+static CONTINUATION_1_5(process_bag_insert, process_bag, value, value, value, uuid);
+static void process_bag_insert(process_bag f, value e, value a, value v, uuid bku)
 {
 }
 
@@ -37,6 +37,7 @@ static void process_bag_scan(process_bag fb, int sig, listener out, value e, val
 {
 }
 
+// there isn't a process bag!
 CONTINUATION_1_1(process_bag_commit, process_bag, edb)
 void process_bag_commit(process_bag pb, edb s)
 {
@@ -97,7 +98,7 @@ void process_bag_commit(process_bag pb, edb s)
             table_set(p->scopes, sym(compiler), compiler_id);
             table_set(p->persisted, compiler_id, compiler_bag);
 
-            p->ev = build_evaluation(p->h, p->name, p->scopes, p->persisted, (evaluation_result)ignore, ignore, n);
+            // p->ev = build_evaluation(p->h, p->name, p->scopes, p->persisted, (evaluation_result)ignore, ignore, n);
             vector_foreach(p->read, i)
                 vector_insert(p->ev->default_scan_scopes, i);
             vector_foreach(p->write, i)
@@ -121,7 +122,6 @@ process_bag process_bag_init(multibag persisted, boolean tracing)
     pb->b.listeners = allocate_table(h, key_from_pointer, compare_pointer);
     pb->b.commit = cont(h, process_bag_commit, pb);
     pb->b.blocks = allocate_vector(h, 1);
-    pb->b.block_listeners = allocate_table(h, key_from_pointer, compare_pointer);
     pb->processes = create_value_table(h);
     pb->persisted = persisted;
     pb->tracing = tracing;

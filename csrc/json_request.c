@@ -46,14 +46,14 @@ buffer format_error_json(heap h, char* message, bag data, uuid data_id)
     if(data != 0) {
       vector_set(includes, 0, data);
     }
-    bag response = (bag)create_edb(h, includes);
+    edb response = create_edb(h, includes);
     uuid root = generate_uuid();
-    apply(response->insert, root, sym(type), sym(error), 1, 0);
-    apply(response->insert, root, sym(stage), sym(executor), 1, 0);
-    apply(response->insert, root, sym(message), intern_cstring(message), 1, 0);
-    apply(response->insert, root, sym(offsets), intern_buffer(stack), 1, 0);
+    edb_insert(response, root, sym(type), sym(error), 0);
+    edb_insert(response, root, sym(stage), sym(executor), 0);
+    edb_insert(response, root, sym(message), intern_cstring(message), 0);
+    edb_insert(response, root, sym(offsets), intern_buffer(stack), 0);
     if(data != 0) {
-      apply(response->insert, root, sym(data), data_id, 1, 0);
+      edb_insert(response, root, sym(data), data_id, 0);
     }
     return json_encode(h, response, root);
 }
@@ -89,11 +89,10 @@ static void send_response(json_session session, multibag t_solution, multibag f_
     edb browser;
 
     if (f_solution && (browser = table_find(f_solution, session->browser_id))) {
-        edb_foreach(browser, e, a, v, c, _) {
+        edb_foreach(browser, e, a, v, _) {
             table_set(results, build_vector(p, e, a, v), etrue);
             table_set(session->id_mappings, e, e);
         }
-
     }
 
 
@@ -101,15 +100,12 @@ static void send_response(json_session session, multibag t_solution, multibag f_
     // destructs h
 
     if (t_solution && (browser = table_find(t_solution, session->browser_id))) {
-        edb_foreach(browser, e, a, v, m, u) {
+        edb_foreach(browser, e, a, v, u) {
             table_set(session->id_mappings, e, e); // @FIXME: This is gonna leak dead ids.
             vector eav = 0;
-            if(m != 0)
-                eav = build_vector(h, e, a, v);
-            if (m > 0 && !eav_vector_contains(diff->insert, eav))
-                vector_insert(diff->insert, eav);
-            if (m < 0 && !eav_vector_contains(diff->remove, eav))
-                vector_insert(diff->remove, eav);
+            eav = build_vector(h, e, a, v);
+            // we had insert and remove
+            vector_insert(diff->insert, eav);
         }
     }
 

@@ -181,15 +181,15 @@ static void client_connected(websocket w, bag request, uuid rid,
                              endpoint down)
 {
 
-    bag shadow = (bag)create_edb(w->h, build_vector(w->h, request));
+    edb shadow = create_edb(w->h, build_vector(w->h, request));
 
     value header = lookupv((edb)request, rid, sym(headers));
     // i guess we could vary this, but since it doesn't actually provide any security...
     // umm, apparently its to stop a cache(?) from replaying an old session? i just
     // dont get it. it would be kind of idiotic to do in the first place, and
     // if they really wanted to...they..could handle this part as well
-    apply(shadow->insert, header, sym(Sec-WebSocket-Key), sym(dGhlIHNhbXBsZSBub25jZQ), 1, 0); /*bku*/
-    apply(shadow->insert, header, sym(Upgrade), sym(websocket), 1, 0);
+    edb_insert(shadow, header, sym(Sec-WebSocket-Key), sym(dGhlIHNhbXBsZSBub25jZQ), 0); /*bku*/
+    edb_insert(shadow, header, sym(Upgrade), sym(websocket), 0);
     http_send_request(down->w, shadow, rid);
     w->down = down;
     apply(w->down->r, response_header_parser(w->h, cont(w->h, header_response, w)));

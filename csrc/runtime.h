@@ -19,8 +19,6 @@ void init_runtime();
 
 void error(char *);
 
-typedef long multiplicity;
-
 #define UUID_LENGTH 12
 
 uuid generate_uuid();
@@ -40,6 +38,20 @@ typedef struct perf {
     int trig;
 } *perf;
 
+
+typedef closure(committer, bag);
+typedef closure(listener, value, value, value, uuid);
+typedef closure(scanner, int, listener, value, value, value);
+
+struct bag {
+    //  uuid u; ?
+    scanner scan;
+    scanner scan_sync;
+    committer commit;
+    table listeners;
+    ticks last_commit;
+};
+
 typedef closure(execf, heap, perf, value *);
 typedef closure(flushf);
 
@@ -48,8 +60,6 @@ typedef closure(flushf);
 void print_value(buffer, value);
 
 typedef struct evaluation *evaluation;
-typedef struct block *block;
-
 
 static value compress_fat_strings(value v)
 {
@@ -65,18 +75,6 @@ static value compress_fat_strings(value v)
 
 typedef closure(evaluation_result, multibag, multibag, boolean);
 
-struct block {
-    heap h;
-    int regs;
-    string name;
-    execf head;
-    flushf flush;
-    evaluation ev;
-    table nmap;
-    uuid start;
-    vector cleanup;
-};
-
 typedef closure(error_handler, char *, bag, uuid);
 typedef closure(bag_handler, bag);
 typedef closure(bag_block_handler, bag, vector, vector); // source, inserts, removes
@@ -85,11 +83,20 @@ typedef void (*commit_function)(multibag backing, multibag delta, closure(finish
 
 struct evaluation  {
     heap h;
+    int regs;
+    execf head;
+    flushf flush;
+    evaluation ev;
+    table nmap;
+    uuid start;
+    vector cleanup;
+
     estring name;
     heap working; // lifetime is a whole f-t pass
     error_handler error;
 
     table scopes;
+    // f should be going away
     multibag t_input;
     multibag block_t_solution;
     multibag block_f_solution;
@@ -97,9 +104,6 @@ struct evaluation  {
     multibag last_f_solution;
     multibag t_solution;
     multibag t_solution_for_f;
-
-    vector blocks;
-    bag event_bag;
 
     table counters;
     ticks t;
@@ -110,19 +114,21 @@ struct evaluation  {
     thunk run;
     ticks cycle_time;
 
+    // needs to be set up before build time and resolved there
     vector default_scan_scopes;
     vector default_insert_scopes; // really 'session'
     bag bag_bag;
-
-    bag_block_handler inject_blocks;
     commit_function commit;
+    uuid id;
 };
 
+
+typedef evaluation block;
 
 void execute(evaluation);
 
 table builders_table();
-block build(evaluation e, bag b, uuid root);
+void build(evaluation ev, bag b, uuid root);
 table start_fixedpoint(heap, table, table, table);
 void close_evaluation(evaluation);
 
@@ -130,13 +136,11 @@ extern char *pathroot;
 
 bag compile_eve(heap h, buffer b, boolean tracing);
 
-evaluation build_evaluation(heap h, estring name,
-                            table scopes, table persisted,
-                            evaluation_result e, error_handler error,
-                            bag compiled);
+//evaluation build_evaluation(heap h,
+//                            bag source,
+//                            bag block_root);
 
 void run_solver(evaluation s);
-void inject_event(evaluation, bag);
 void block_close(block);
 bag init_request_service();
 
@@ -164,7 +168,7 @@ bag init_bag_bag(evaluation ev);
 typedef struct process_bag *process_bag;
 process_bag process_bag_init(multibag, boolean);
 
-typedef closure(object_handler, bag, uuid);
+typedef closure(object_handler, edb, uuid);
 object_handler create_json_session(heap h, evaluation ev, endpoint down);
 evaluation process_resolve(process_bag, uuid);
 

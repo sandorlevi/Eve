@@ -14,18 +14,18 @@ static void udp_scan(udp_bag ub, int sig, listener out, value e, value a, value 
     prf("udp scan: %v %v %v\n", e, a, v);
     if ((sig == s_eAV) && (a == sym(tag)) && (v == sym(udp))){
         table_foreach(ub->channels, e, u)
-            apply(out, e, a, v, 1, 0);
+            apply(out, e, a, v, 0);
     }
     
     // ech
     if ((sig == s_eAv) && (a == sym(address)))  
         table_foreach(ub->channels, e, u)
-            apply(out, e, a, udp_station(u), 1, 0);
+            apply(out, e, a, udp_station(u), 0);
 
     
     if ((sig == s_EAv) && (a == sym(address))) {
         udp u = table_find(ub->channels, e);
-        apply(out, e, a, udp_station(u), 1, 0);
+        apply(out, e, a, udp_station(u), 0);
     }
 }
 
@@ -42,22 +42,22 @@ static void udp_commit(udp_bag ub, edb s)
     station d;
     prf("udp commit: %b\n", edb_dump(init, s));
 
-    edb_foreach_e(s, e, sym(tag), sym(udp), c) {
+    edb_foreach_e(s, e, sym(tag), sym(udp)) {
         unsigned int host = 0;
         int port = 0;
-        edb_foreach_v(s, e, sym(port), port, c) {
+        edb_foreach_v(s, e, sym(port), port) {
             // fill in port if defined
         }
-        edb_foreach_v(s, e, sym(host), port, c) {
+        edb_foreach_v(s, e, sym(host), port) {
             // fill in port if defined
         }
         prf("udp commit %d\n", table_elements(ub->b.listeners));
         udp u = create_udp(ub->h, ip_wildcard, cont(ub->h, udp_input, ub));
         table_set(ub->channels, e, u);
     }
-    edb_foreach_e(s, e, sym(tag), sym(packet), _) {
-        edb_foreach_v(s, e, sym(destination), destination, _) {
-            edb_foreach_v(s, e, sym(body), b, _) {
+    edb_foreach_e(s, e, sym(tag), sym(packet)) {
+        edb_foreach_v(s, e, sym(destination), destination) {
+            edb_foreach_v(s, e, sym(body), b) {
                 edb h = table_find(ub->ev->t_input, b);
                 prf("body: %v %p\n", b, h);
                 if (h) {
@@ -81,7 +81,7 @@ static void udp_reception(udp_bag u, station s, buffer b)
 
 // we shouldn't need this evaluation, but first class bags and
 // hackerism
-bag udp_bag_init(evaluation ev)
+bag udp_bag_init()
 {
     // this should be some kind of parameterized listener.
     // we can do the same trick that we tried to do
@@ -94,9 +94,8 @@ bag udp_bag_init(evaluation ev)
     ub->b.commit = cont(h, udp_commit, ub);
     ub->b.scan = cont(h, udp_scan, ub);
     ub->b.listeners = allocate_table(h, key_from_pointer, compare_pointer);
-    ub->b.blocks = allocate_vector(h, 0);
-    ub->b.block_listeners = allocate_table(h, key_from_pointer, compare_pointer);
     ub->channels = create_value_table(h);
-    ub->ev = ev;
+    // doctopus
+    //     ub->ev = ev;
     return (bag)ub;
 }

@@ -1,20 +1,11 @@
-Pre-fetch the code for hard-coded watchers
-```
-  commit
-    [#watcher @browser]
-    //[#watcher @editor]
-```
 
+initialize
 ```
   match
-    watcher = [#watcher name]
-    not(watcher.code)
-  match @file
-    [#root child: [@evesrc child: [name: "{{name}}.eve" contents: code]]]
-  commit
-    watcher.code := code
+    [#initialize]
+  commit @log
+    [#start-event]
 ```
-
 
 start path resolution
 ```
@@ -22,6 +13,8 @@ start path resolution
      fr = [#root]
   match
      connection = [#http-request]
+     url = connection.request.url
+     host = connection.request.host
      split[text:connection.request.url token index, by:"/"]
      websocket = if connection.request.headers.Sec-WebSocket-Protocol = "eve-json" then true else false
   bind
@@ -29,6 +22,8 @@ start path resolution
      [#path index token]
   commit
      [#request-object connection websocket]
+  commit @log
+     [#request url host]
 ```
 
 resolve a path

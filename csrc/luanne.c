@@ -224,6 +224,7 @@ int lua_create_edb(lua_State *L)
     return 1;
 }
 
+// xxx - remove
 int lua_insert_edb(lua_State *L)
 {
     interpreter c = lua_context(L);
@@ -235,8 +236,7 @@ int lua_insert_edb(lua_State *L)
         prf("bad v %v %v\n", e, a);
     }
     int m = (int)lua_tonumber(L, 5);
-    apply(b->insert, e, a, v, m, 0);
-
+    edb_insert(b, e, a, v, 0);
     return 0;
 }
 

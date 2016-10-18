@@ -149,11 +149,11 @@ static void table_dump_row(postgres p, pgtable t, vector res)
 {
     uuid id = generate_uuid();
     int index;
-    apply(p->backing->insert, id, sym(tag), t->name, 1, 0);
+    edb_insert(p->backing, id, sym(tag), t->name, 0);
     vector_foreach(res, i) {
         if (i) {
             pgcolumn c = vector_get(t->column_list, index);
-            apply(p->backing->insert, id, c->name, i, 1, 0);
+            edb_insert(p->backing, id, c->name, i, 0);
         }
         index++;
     }
@@ -407,8 +407,6 @@ bag connect_postgres(station s, estring user, estring password, estring database
     p->b.scan = cont(h, postgres_scan, p);
     p->b.commit = cont(h, postgres_commit, p);
     p->b.listeners = allocate_table(p->h, key_from_pointer, compare_pointer);
-    p->b.block_listeners = allocate_table(p->h, key_from_pointer, compare_pointer);
-    p->b.blocks = allocate_vector(p->h, 0);
     tcp_create_client(h, s, cont(h, postgres_connected, p));
     return (bag)p;
 }

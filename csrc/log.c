@@ -44,7 +44,7 @@ static void fill(edb target, value *e, value *a, value v)
 {
     if (!*e) {*e = v; return;}
     if (!*a) {*a = v; return;}
-    apply(target->b.insert, *e, *a, v, 1, 0);
+    edb_insert(target, *e, *a, v, 0);
 }
 
 // maybe descriptor?
@@ -54,9 +54,10 @@ bag start_log(bag base, char *filename)
     commitlog log = allocate(h, sizeof(struct commitlog));
     log->b.commit = cont(h, log_commit, log);
     log->b.scan = base->scan;
+    log->b.listeners = base->listeners;
 
     // xxx - move this into a unix specific async file handler
-    int fd = open(filename, O_CREAT | O_APPEND | O_RDWR);
+    int fd = open(filename, O_CREAT | O_APPEND | O_RDWR, 0666);
     buffer stage;
     value *e = allocate(h, sizeof(value));
     value *a = allocate(h, sizeof(value));
