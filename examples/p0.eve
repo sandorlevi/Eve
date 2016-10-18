@@ -1,16 +1,18 @@
 repeat success succeed the parent object
 ```
 search
-   [#repeat-complete]
+   [#repeat-complete tail parent]
+   lookup[record:parent attribute value]
 commit
-
+   record = [#repeat-term text:tail]
+   lookup[record attribute value]
 ```
 
 
 repeat fail
 ```
    search r = [#repeat-term text fail]
-   commit r.parent.tail = text
+   commit r.parent.tail := text
 ```
 
 
