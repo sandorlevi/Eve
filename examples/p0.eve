@@ -15,24 +15,14 @@ repeat fail
    commit r.parent.tail := text
 ```
 
-
-repeat success
-```
-search
-   [#repeat-term tail r]
-commit
-   t := [#repeat-term text parent]
-   t <- each
-```
-
-
 repeat start
 ```
 search
-  parent = [#repeat completion each text]
+  parent = [#repeat completion each:record text]
+  lookup[record attribute value]
 commit
-  t := [#repeat-term text parent]
-  t <- each
+  record = [#repeat-term text parent]
+  lookup[record attribute value]
 commit @browser
    [#div text]
 ```
