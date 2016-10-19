@@ -1,0 +1,75 @@
+# substring handling
+a parser combinator called #head which takes a string attribute head
+and succeeds if the head is at the beginning of the string, and fails
+otherwise
+
+## failure:
+```
+          search s = [#head head text]
+                 not(head = substring[text to:string-length[text:head]])
+          commit @browser
+               [#div text:"failo {{s}}"]
+          bind
+               s.fail := "expected {{head}}"
+```
+
+## success:
+```
+         search s = [#head head text]
+                to = string-length[text:head]
+                head = substring[text to]
+                not(s.tail)
+                not(s.fail)
+         commit @browser
+                [#div text:"substring match {{s}} {{substring[text from:to]}}"]
+         bind
+               s.tail := substring[text from:to]
+```
+
+# repeat combinator
+## child failed - we always succeed, but take the text from the failure and make it our tail
+```
+       search r = [#repeat-term text fail]
+       commit r.parent.tail := text
+       commit @browser [#div text:"repeat fail {{text}}"]
+```
+
+## child succeeded
+```
+       search
+          [#repeat-term tail parent]
+          lookup[record:parent.each attribute value]
+       bind
+          record = [#repeat-term text:tail]
+          lookup[record attribute value]
+       commit @browser [#div text:"repeat success {{tail}} {{record}} {{attribute}} {{value}}"]
+```
+
+## match on #repeat objects and kick off the process
+```
+       search
+          parent = [#repeat each:record text]
+          lookup[record attribute value]
+          not(parent.tail)
+          not(parent.fail)
+       bind
+          record = [#repeat-term text parent]
+          lookup[record attribute value]
+       commit @browser
+          [#div text:"bobo {{text}}  {{attribute}} {{value}}"]
+```
+
+# start the pupae
+```
+   bind
+      [#repeat #parse each:[#head head:"az"] text:"azazazaz"]
+   commit @browser
+     [#div text:"zikky"]
+```
+
+# report the pupae
+```
+  search p = [#parse tail:""]
+  commit @browser
+     [#div text:"total success {{p}}"]
+```

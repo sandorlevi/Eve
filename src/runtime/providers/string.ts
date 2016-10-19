@@ -30,6 +30,7 @@ class Concat extends Constraint {
   }
 }
 
+
 class substring extends Constraint {
   static AttributeMapping = {
     "text": 0,
@@ -47,6 +48,7 @@ class substring extends Constraint {
     let to = text.length
     if (args[1] != undefined) from = args[1]
     if (args[2] != undefined) to = args[2]
+    console.log("SSSSSSSss do", text, from, to)
     return [text.substring(from, to)];
   }
 
@@ -59,11 +61,38 @@ class substring extends Constraint {
     let to = text.length
     if (args[1] != undefined) from = args[1]
     if (args[2] != undefined) to = args[2]
-
-   return text.substring(from, to) === returns[0];
+    console.log("SSSSSSsstest", text, from, to, returns[0])
+    return text.substring(from, to) === returns[0];
   }
 
   // concat always returns cardinality 1
+  getProposal(tripleIndex, proposed, prefix) {
+    let proposal = this.proposalObject;
+    proposal.providing = proposed;
+    proposal.cardinality = 1;
+    return proposal;
+  }
+}
+
+class stringLength extends Constraint {
+  static AttributeMapping = {
+    "text": 0,
+  }
+  static ReturnMapping = {
+    "value": 0,
+  }
+
+  resolveProposal(proposal, prefix) {
+    let {args} = this.resolve(prefix);
+    return [args[0].length]
+  }
+
+ test(prefix) {
+    let {args, returns} = this.resolve(prefix);
+    return args[0].length == returns[0]
+  }
+
+  // stringLength always returns cardinality 1
   getProposal(tripleIndex, proposed, prefix) {
     let proposal = this.proposalObject;
     proposal.providing = proposed;
@@ -142,3 +171,4 @@ class Split extends Constraint {
 providers.provide("concat", Concat);
 providers.provide("split", Split);
 providers.provide("substring", substring);
+providers.provide("string-length", stringLength);

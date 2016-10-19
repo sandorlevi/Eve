@@ -18,29 +18,34 @@ repeat fail
 repeat start
 ```
 search
-  parent = [#repeat completion each:record text]
+  parent = [#repeat each:record text]
   lookup[record attribute value]
-commit
+bind
   record = [#repeat-term text parent]
   lookup[record attribute value]
-commit @browser
+bind @browser
    [#div text]
 ```
 
 
 substring success
 ```
-   search s = [#substring head text]
-          // not 100% on this inline syntax
-          head = first[text tail]
+   search s = [#head head text]
+          to = string-length[head]
+          head = substring[text to]
+   bind @browser
+        [#div text:"successo"]
    commit
-         s.tail := tail
+         s.tail := substring[text from:to]
 ```
+
 
 substring fail
 ```
    search s = [#substring head text]
-          not(head = first[text tail])
+          not(head = substring[text to:string-length[head]])
+   commit @browser
+        [#div text:"failo"]
    commit
          s.fail := "expected {{head}}"
 ```
@@ -48,13 +53,15 @@ substring fail
 
 start the pupae
 ```
-   bind
-      [#repeat #parse result match: tail:""]
+   commit
+      [#repeat #parse each:[#head head:"az"] text:"azazazaz"]
+   bind @browser
+     [#div text:"zikky"]
 ```
 
 fix the pupae
 ```
-  search p = [#parse "azazaz"]
-  commit @browser
+  search p = [#parse]
+  bind @browser
      [#div text:p]
 ```
