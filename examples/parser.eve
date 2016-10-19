@@ -1,0 +1,112 @@
+# substring matcher
+a parser combinator called #head which takes a string attribute head
+and succeeds if the head is at the beginning of the string, and fails
+otherwise
+
+## failure:
+```
+          search s = [#head head text]
+                 not(head = substring[text to:string-length[text:head] + 1])
+          bind
+                 s.fail := "expected {{head}}"
+```
+
+## success:
+```
+         search s = [#head head text]
+                to = string-length[text:head] + 1
+                head = substring[text to]
+         bind
+               s.tail := substring[text from:to]
+```
+
+# repeat combinator
+## child failed - we always succeed, but take the text from the failure and make it our tail
+```
+       search [#repeat-term text fail parent]
+       bind parent.tail := text
+```
+
+## child succeeded
+```
+       search
+          r = [#repeat-term tail:text parent]
+          lookup[record:parent.each attribute value]
+       bind
+          record = [#repeat-term text parent]
+          lookup[record attribute value]
+```
+
+## match on #repeat objects and kick off the process
+```
+       search
+          parent = [#repeat each text]
+          lookup[record:each attribute value]
+          not(parent.tail)
+          not(parent.fail)
+       // consider making a generic parser forker
+       bind
+          record = [#repeat-term text parent]
+          lookup[record attribute value]
+```
+
+# sequential combinator
+## sequence element failed - fail out the sequence
+```
+       search [#sequence-term text fail parent]
+       bind parent.fail := fail
+       commit @browser [#div text:"sequence fail {{fail}} {{text}}"]
+```
+
+## sequence element succeeded
+```
+       search
+          r = [#sequence-term tail:text parent ord: n]
+          c = parent.children
+          n + 1 = c.ord
+          lookup[record:c attribute value]
+       bind
+          record = [#sequence-term text parent]
+          lookup[record attribute value]
+       commit @browser [#div text:"sequence success tail:{{text}} {{c}}"]
+```
+
+## sequence succeeded - there is a tail but no children left to process
+```
+       search
+          [#sequence-term tail parent ord]
+          not (parent.children.ord = ord + 1)
+       bind
+          parent.tail := tail
+       commit @browser [#div text:"sequence succeeded {{ord}}"]
+
+```
+
+## match on #sequence objects and kick off the process
+```
+       search
+          parent = [#sequence text children]
+          children.ord = 0
+          lookup[record:children attribute value]
+          not(parent.tail)
+          not(parent.fail)
+       bind
+          record = [#sequence-term text parent]
+          lookup[record attribute value]
+       commit @browser [#div text:"started sequence"]
+```
+
+# start the pupae
+```
+   bind
+      [#sequence #parse children:([#repeat ord:0 #parse each:[#head head:"az"]]
+                           [#head   ord:1 head:"po"])
+                 text:"azazazpo"]
+```
+
+# report the pupae
+```
+  search p = [#parse tail:""]
+  commit @browser
+     [#div text:"total success {{p}}"]
+```

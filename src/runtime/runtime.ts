@@ -192,7 +192,7 @@ export class Evaluation {
     let start = runtimePerformance.time();
     let commit;
     changes.changed = true;
-    while(changes.changed && changes.round < 10) {
+    while(changes.changed && changes.round < 100) {
       changes.nextRound();
       // console.groupCollapsed("Round" + changes.round);
       for(let block of blocks) {
@@ -220,5 +220,3 @@ export class Evaluation {
     }
   }
 }
-
-
