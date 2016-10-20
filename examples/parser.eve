@@ -2,42 +2,187 @@
 ## lexical classes
 ```
 bind
-  [#operator name: "*" precedence:3]
-  [#operator name: "-" precedence:2]
-  [#operator name: "/" precedence:3]
-  [#operator name: "+" precedence:2]
-  [#operator name: ":=" precedence:4 #commit-only]
-  [#operator name: "<=" precedence:4 #commit-only]
-  [#operator name: "+=" precedence:4 #commit-only]
-  [#operator name: "=" precedence:4]
-  [#blocking name: "@"]
-  [#blocking name: "#"]
-  [#blocking name: "."]
-  [#blocking name: ","]
-  [#blocking name: "("]
-  [#blocking name: ")"]
-  [#blocking name: "["]
-  [#blocking name: "]"]
-  [#blocking name: "{"]
-  [#blocking name: "}"]
-  [#blocking name: "⦑"]
-  [#blocking name: "⦒"]
-  [#blocking name: ":"]
-  [#blocking name: "\""]
-  [#digit name: "0"]
-  [#digit name: "1"]
-  [#digit name: "2"]
-  [#digit name: "3"]
-  [#digit name: "4"]
-  [#digit name: "5"]
-  [#digit name: "6"]
-  [#digit name: "7"]
-  [#digit name: "8"]
-  [#digit name: "9"]
+  [name: "*" precedence:3 #operator]
+  [name: "-" precedence:2 #operator]
+  [name: "/" precedence:3 #operator]
+  [name: "+" precedence:2 #operator]
+  [name: ":=" precedence:4 #commit-only #operator]
+  [name: "<=" precedence:4 #commit-only #operator]
+  [name: "+=" precedence:4 #commit-only #operator]
+  [name: "=" precedence:4 #operator]
+  [name: "@" #blocking]
+  [name: "#" #blocking]
+  [name: "." #blocking] // this guy can't be used inside an object reference if the lhs is free (?)
+  [name: "," #blocking]
+  [name: "(" #blocking]
+  [name: ")" #blocking]
+  [name: "[" #blocking]
+  [name: "]" #blocking]
+  [name: "{" #non-string #blocking]
+  [name: "}" #blocking]
+  [name: "⦑" #blocking]
+  [name: "⦒" #blocking]
+  [name: ":" #blocking]
+  [name: "\"" #blocking]
+  [name: "\\" #non-string]
+  [name: "0" #digit]
+  [name: "1" #digit]
+  [name: "2" #digit]
+  [name: "3" #digit]
+  [name: "4" #digit]
+  [name: "5" #digit]
+  [name: "6" #digit]
+  [name: "7" #digit]
+  [name: "8" #digit]
+  [name: "9" #digit]
 ```
 
+## string
+### backslash
+```
+       search b = [#backslash text]
+              "\\"= substring[text from:1 to:1]
+       bind b.tail := substring[text from:3]
+            b.val := substring[text from:2 to:2]
+```
+
+
+### start-expansion
+TODO - construct the binary or variadic concat operator
+```
+       search b = [#string text]
+              '{{' = substring[text to:2]
+       bind b = [#sequence children:([ord:1 #expression attribute:"val"]
+                                     [ord:2 #head head:"}}"])]
+```
+
+### start
+```
+       search s = [#string text]
+       bind s <- [#sequence children:([ord:1 #char char:"\""]
+                                      [ord:2 #repeat term:[#or children:([#backslash]
+                                                                         [#expansion]
+                                                                         [#negation guard:[#char char:"\""] term:[#char]])]]
+                                      [ord:3 #char char:"\""])]
+```
+
+## numbers
+
+### start
+
+TODO :
+
+- optional initial +/-
+- decimal support
+- exponent (and negative exponent)
+
+semantic returns - make a string to int
+
+```
+       search [#number text]
+       bind [#repeat each:[#member set:"digit"] #collect-string]
+```
+
+## expressions
+
+### center expression fail success
+this is legit, this means end of expression
+```
+search [#center-expression]
+```
+### total fail
+this is legit, this means end of expression
+```
+      search [#center-expression fail text]
+      bind [#expression tail:text]
+```
+
+### center expression success pop
+
+```
+      // i typed parent.precedence in this search object,
+      // which ... seems like it could be legit?
+      // also parent isn't bound
+      search [#center-expression val tail parent:[precedence]]
+             val.precedence > precedence
+      bind
+
+
+```
+
+### center expression success push
+ we use commit here because we expect the expression node to be part
+ of the final result.. is there a specific bag we're trying to build?
+```
+      search [#center-expression val tail parent]
+             val.precedence <= parent.precedence
+      commit
+             n = [#expression left:parent.val operator:val]
+      bind
+             parent.val := n
+```
+
+### left expression fail
+```
+search e = [#left-expression]
+       4 = count(e.fail)
+bind e.parent.fail += "expression operand parse fail"
+```
+
+### left expression success
+```
+         search e = [#left-expression val tail parent]
+         bind val.next := parent.val.next
+              parent.val := val
+              [#center-expression parent text:tail]
+```
+
+
+###start
+```
+          search e = [#expression]
+          bind [#left-expression #string #number #variable #parenthetical-subexpression]
+               e.precedence := 0
+```
+##
+
+### variable
+### number
+### string
+
+### start
+
+## start the parse
+this guy should just match on #eve-parse and text
+```
+   bind
+      // deconstruct into a series of blocks
+      [#repeat #parse
+               each:[#sequence
+                     children:([ord:1 #repeat each:[#negation guard:[#head head:"```"] clause:[#consume]]]
+                               [ord:2 #head head:"```"]
+                               [ord:3 #block]
+                               [ord:4 #head head:"```"])]
+               text:"fooooz ```search @zikky [#pang foo:3 bar:baz]```"]
+```
+
+## report the parse result
+```
+  search p = [#parse tail:""]
+  commit @browser
+     [#div text:"total success {{p}}"]
+```
+
+# general parser support
+conventions that parsers need to conform to to be composable:
+
+  * if a parser fails it should _add_ (+=) a _fail_ attribute to the parser
+  * if a parser succeeds, it should assert the _tail_ attribute with the remainder of the
+    parse string
+  * if a semantic result is produced, it should be assigned to the _value_ attribute
+
 ## single character set matcher
-#### success
+### success
 need to cons up the result - look at semantic returns
 ```
       search n = [#member set text]
@@ -47,56 +192,22 @@ need to cons up the result - look at semantic returns
              n.tail := substring[text from:2]
 ```
 
-#### fail
+### fail
 ```
       search n = [#member set text]
              c = substring[text to:2]
              [tag:set name:c]
       bind
-             n.fail := "character not in set {{set}}"
+             n.fail += "character not in set {{set}}"
 ```
 
-
-## string
-### backslash
-
-### expansion
-
-### continue
-```
-```
-
-### start
-```
-       search [#string text]
-```
-## numbers
-
-### start
-TODO - optional initial +/-
-                decimal support
-                exponent (and negative exponent)
-semantic returns - make a string to int
-
-```
-       search [#number text]
-       bind [#repeat each:[#member set:"digit"]]
-```
-## expressions
-ok, we're going to use the phase rule
-
-### variable
-### number
-### string
-
-### start
 
 ## substring matcher
 a parser combinator called #head which takes a string attribute head
 and succeeds if the head is at the beginning of the string, and fails
 otherwise
 
-#### failure:
+### failure:
 ```
           search s = [#head head text]
                  not(head = substring[text to:string-length[text:head] + 1])
@@ -104,7 +215,7 @@ otherwise
                  s.fail := "expected {{head}}"
 ```
 
-#### success:
+### success:
 ```
          search s = [#head head text]
                 to = string-length[text:head] + 1
@@ -115,14 +226,14 @@ otherwise
 
 ## negation combinator
 
-#### guard succeeded
+### guard succeeded
 negation feailure - the error message here is a bit opaque? pass that in?
 ```
         search n = [#negation-guard parent tail]
         bind parent.fail := "guard succeeded"
 ```
 
-#### child failed
+### child failed
    negation succeeded. merge the clause attribute into the
    parent. (seems like we wont necessarily pollute the canonical
    template?)
@@ -132,7 +243,7 @@ negation feailure - the error message here is a bit opaque? pass that in?
         bind lookup[record:parent attribute value]
 ```
 
-#### set up negation
+### set up negation
 ```
         search n = [#negation guard rest text]
                lookup[record:guard attribute value]
@@ -144,14 +255,15 @@ negation feailure - the error message here is a bit opaque? pass that in?
 
 
 ## repeat combinator
-#### child failed
+### child failed
 we always succeed, but take the text from the failure and make it our tail
 ```
        search [#repeat-term text fail parent]
        bind parent.tail := text
 ```
 
-#### child succeeded
+### child succeeded
+TODO - implement collect-string
 ```
        search
           r = [#repeat-term tail:text parent]
@@ -161,7 +273,11 @@ we always succeed, but take the text from the failure and make it our tail
           lookup[record attribute value]
 ```
 
-#### build #repeat machine
+### collect string
+```
+          search r = [#repeat-term tail:text parent]
+```
+### build #repeat machine
 ```
        search
           parent = [#repeat each text]
@@ -173,16 +289,55 @@ we always succeed, but take the text from the failure and make it our tail
           record = [#repeat-term text parent]
           lookup[record attribute value]
 ```
+## or combinator
+### success
+what happens if two of these come through here...conditionalize
+on the absence in the parent?
+```
+   search [#or-agent tail val]
+   bind parent <- [tail value]
+```
+
+### fail
+```
+   search [#or-agent fail parent]
+          count(fail) = count(parent.children)
+          // we could do better than
+          total = join(fail)
+   bind
+          parent.fail = total
+```
+### start
+start all the subparsers simultanesously
+
+the or combinator uses #or-agent to collect up all the failures.
+oddly, it takes all of the attributes of all of the children, which
+is likely to cause conflicts down the road.
+```
+        search parent = [#or text children]
+               lookup [record:children attribute value]
+        bind o = [#or-agent parent]
+             lookup[record:o attribute value]
+
+```
 
 ## sequential combinator
-#### element failed
+the _children_ attribute of a sequence is a set of template parsers,
+each of with labelled with _ord_ to define its order in the
+sequence.
+
+the _attribute_ attribute in a sub-parser causes the value returned
+by the subparser to be bound to the result object using the value
+of the _attribute_ as the attribute name in the result.
+
+### element failed
 fail out the sequence, everyone has to pass for the sequence to pass
 ```
        search [#sequence-term text fail parent]
        bind parent.fail := fail
 ```
 
-#### element succeeded
+### element succeeded
 queue up the next parser
 ```
        search
@@ -195,7 +350,7 @@ queue up the next parser
           lookup[record attribute value]
 ```
 
-#### succeeded
+### succeeded
 there is a tail but no children left to process, post the
 tail to the parent
 ```
@@ -206,37 +361,16 @@ tail to the parent
           parent.tail := tail
 ```
 
-#### start
+### start
 match on #sequence objects and kick off the process
 ```
        search
           parent = [#sequence text children]
-          children.ord = 0
+          children.ord = 1
           lookup[record:children attribute value]
           not(parent.tail)
           not(parent.fail)
        bind
           record = [#sequence-term text parent]
           lookup[record attribute value]
-```
-
-## start the parse
-this guy should just match on #eve-parse and text
-```
-   bind
-      // deconstruct into a series of blocks
-      [#repeat #parse
-               each:[#sequence
-                     children:([ord:0 #repeat each:[#negation guard:[#head head:"```"] clause:[#consume]]]
-                               [ord:1 #head head:"```"]
-                               [ord:2 #block]
-                               [ord:3 #head head:"```"])]
-               text:"fooooz ```search @zikky [#pang foo:3 bar:baz]```"]
-```
-
-## report the parse result
-```
-  search p = [#parse tail:""]
-  commit @browser
-     [#div text:"total success {{p}}"]
 ```
