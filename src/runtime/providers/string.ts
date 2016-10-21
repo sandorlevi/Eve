@@ -48,7 +48,9 @@ class substring extends Constraint {
     let text = args[0]
     let to = text.length
     if (args[1] != undefined) from = args[1] - 1
+    // XXX - maybe to shouldn't be -1 since JS is exclusive and EVE is inclusive?
     if (args[2] != undefined) to = args[2] - 1
+    console.log("subby string", text.substring(from, to), from, to)
     return [text.substring(from, to)];
   }
 
@@ -59,10 +61,11 @@ class substring extends Constraint {
     let to = text.length
     if (args[1] != undefined) from = args[1] - 1
     if (args[2] != undefined) to = args[2] - 1
+    console.log("test string", text.substring(from, to), returns[0])
     return text.substring(from, to) === returns[0];
   }
 
-  // concat always returns cardinality 1
+  // substring always returns cardinality 1
   getProposal(tripleIndex, proposed, prefix) {
     let proposal = this.proposalObject;
     proposal.providing = proposed;
@@ -81,6 +84,7 @@ class stringLength extends Constraint {
 
   resolveProposal(proposal, prefix) {
     let {args} = this.resolve(prefix);
+    console.log("length", args[0].length);
     return [args[0].length]
   }
 
@@ -90,6 +94,36 @@ class stringLength extends Constraint {
   }
 
   // stringLength always returns cardinality 1
+  getProposal(tripleIndex, proposed, prefix) {
+    let proposal = this.proposalObject;
+    proposal.providing = proposed;
+    proposal.cardinality = 1;
+    return proposal;
+  }
+}
+
+
+class stringToNumber extends Constraint {
+  static AttributeMapping = {
+    "text": 0,
+  }
+  static ReturnMapping = {
+    "value": 0,
+  }
+
+  resolveProposal(proposal, prefix) {
+    // if not a string formatted appropriately for a float, return no results
+    let {args} = this.resolve(prefix);
+    return [parseFloat(args[0])]
+  }
+
+ test(prefix) {
+    // if not a string, return false without faulting
+    let {args, returns} = this.resolve(prefix);
+    return parseFloat(args[0]) == returns[0]
+  }
+
+  // stringToNumber always returns cardinality 1
   getProposal(tripleIndex, proposed, prefix) {
     let proposal = this.proposalObject;
     proposal.providing = proposed;
@@ -169,3 +203,4 @@ providers.provide("concat", Concat);
 providers.provide("split", Split);
 providers.provide("substring", substring);
 providers.provide("string-length", stringLength);
+providers.provide("string-to-number", stringToNumber);

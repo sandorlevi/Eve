@@ -1,0 +1,98 @@
+ew# parse expression examples
+## operators and lexical classes
+```
+bind
+  [name: "*" precedence:3 #operator]
+  [name: "-" precedence:2 #operator]
+  [name: "/" precedence:3 #operator]
+  [name: "+" precedence:2 #operator]
+  [name: "=" precedence:4 #operator]
+  [name: "0" #digit]
+  [name: "1" #digit]
+  [name: "2" #digit]
+  [name: "3" #digit]
+  [name: "4" #digit]
+  [name: "5" #digit]
+  [name: "6" #digit]
+  [name: "7" #digit]
+  [name: "8" #digit]
+  [name: "9" #digit]
+```
+
+
+##number
+```
+       search n = [#number text]
+              // this is not appropriately inclusive
+              name = substring[text to:2]
+              [#digit name]
+       bind  n <- [tail:substring[text from:2] val:string-to-number[text:name]]
+       commit @browser
+             [#div text:"number {{string-to-number[text:name]}}"]
+```
+
+## expressions
+
+### collapse stack
+```
+      search e = [#expression ops vals]
+             reduce = ops.next
+             reduce.precedence >= ops.precedence
+             // what about the tail? has to match something
+      bind
+             ops.next := reduce.next.next
+             reduce <- [left:vals right:vals next:vals.next.next]
+             e.vals := reduce
+```
+
+### center expression success
+
+```
+      search c = [#center-expression text parent]
+             not (c.tail)
+             operator = [#operator name]
+             olength = string-length[text:name] + 1
+             name = substring[text to:olength]
+             tail = substring[text from:olength]
+      commit @browser [#div text:"center {{name}}"]
+      commit
+             n = [#expression-node left:parent.val operator next:parent.ops]
+      bind
+             [#left-expression parent text:tail]
+             c := none
+             parent.ops := n
+
+```
+
+### debuggo
+```
+search record = [#center-expression]
+       lookup[record attribute value]
+commit @browser [#div text:"la {{record}} {{attribute}} {{value}}"]
+```
+
+
+### left expression success
+```
+         search e = [#left-expression val tail parent]
+         // push onto the val stack
+         bind val.next := parent.val
+              parent.val := val
+              [#center-expression parent text:tail]
+         commit @browser [#div text:"left {{val}}"]
+```
+
+
+###start
+```
+          search parent = [#expression text]
+          bind [#left-expression #number text parent]
+          commit @browser  [#div text:"start left"]
+```
+
+
+## test case
+```
+          bind [#expression text: "4+5*7" ops:0 val:0]
+          commit @browser  [#div text:"start"]
+```
