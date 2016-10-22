@@ -21,9 +21,9 @@ bind
 
 
 ##number
+TODO - substring isn't appropriately conservative
 ```
        search n = [#number text]
-              // this is not appropriately inclusive
               name = substring[text to:2]
               [#digit name]
        bind  n <- [tail:substring[text from:2] val:string-to-number[text:name]]
@@ -34,39 +34,34 @@ bind
 ## expressions
 
 ### collapse stack
+- how do I pull the root out of this guy now? looks like i have to generate a height (but how)
+- ok, i could also use integer indices with a cross, but
+  the immutable doubly linked list is likely(?) ok?
+
 ```
-      search e = [#expression ops vals]
-             reduce = ops.next
-             reduce.precedence >= ops.precedence
-             // what about the tail? has to match something
+      search e = [#center-node next prev]
+             right = if next.next.precedence > e.precedence then next.next else next
+             left = if prev.prev.precedence > e.precedence then prev.prev else prev
       bind
-             ops.next := reduce.next.next
-             reduce <- [left:vals right:vals next:vals.next.next]
-             e.vals := reduce
+             e.right := right
+             e.left := left
 ```
 
 ### center expression success
 
 ```
       search c = [#center-expression text parent]
-             not (c.tail)
              operator = [#operator name]
              olength = string-length[text:name] + 1
              name = substring[text to:olength]
              tail = substring[text from:olength]
       commit @browser [#div text:"center {{name}}"]
-      commit
-             n = [#expression-node left:parent.val operator next:parent.ops]
-      bind
-             [#left-expression parent text:tail]
-             c := none
-             parent.ops := n
-
+      bind  [#left-expression parent text:tail prev:c]
 ```
 
 ### debuggo
 ```
-search record = [#center-expression]
+search record = []
        lookup[record attribute value]
 commit @browser [#div text:"la {{record}} {{attribute}} {{value}}"]
 ```
@@ -75,24 +70,27 @@ commit @browser [#div text:"la {{record}} {{attribute}} {{value}}"]
 ### left expression success
 ```
          search e = [#left-expression val tail parent]
-         // push onto the val stack
-         bind val.next := parent.val
-              parent.val := val
-              [#center-expression parent text:tail]
+         bind e.next := [#center-expression parent text:tail prev:e]
          commit @browser [#div text:"left {{val}}"]
+```
+
+### left expression start
+```
+         search e = [#left-expression text parent]
+         bind e.tag += "number"
 ```
 
 
 ###start
 ```
           search parent = [#expression text]
-          bind [#left-expression #number text parent]
+          bind [#left-expression text parent prev:[precedence:0]]
           commit @browser  [#div text:"start left"]
 ```
 
 
 ## test case
 ```
-          bind [#expression text: "4+5*7" ops:0 val:0]
+          bind [#expression text: "4+5*7"]
           commit @browser  [#div text:"start"]
 ```
