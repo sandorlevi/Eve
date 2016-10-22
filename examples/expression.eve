@@ -21,7 +21,7 @@ bind
 
 
 ##number
-TODO - substring isn't appropriately conservative
+TODO - substring isn't appropriately inclusive
 ```
        search n = [#number text]
               name = substring[text to:2]
@@ -35,13 +35,12 @@ TODO - substring isn't appropriately conservative
 
 ### collapse stack
 - how do I pull the root out of this guy now? looks like i have to generate a height (but how)
-- ok, i could also use integer indices with a cross, but
-  the immutable doubly linked list is likely(?) ok?
-
 ```
       search e = [#center-node next prev]
-             right = if next.next.precedence > e.precedence then next.next else next
-             left = if prev.prev.precedence > e.precedence then prev.prev else prev
+             nn = next.next
+             pp = prev.prev
+             right = if nn.precedence > e.precedence then nn else next
+             left = if pp.precedence > e.precedence then pp else prev
       bind
              e.right := right
              e.left := left
@@ -56,7 +55,8 @@ TODO - substring isn't appropriately conservative
              name = substring[text to:olength]
              tail = substring[text from:olength]
       commit @browser [#div text:"center {{name}}"]
-      bind  [#left-expression parent text:tail prev:c]
+      bind  c.next := [#left-expression parent text:tail prev:c]
+            
 ```
 
 ### debuggo
