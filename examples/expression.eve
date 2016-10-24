@@ -22,29 +22,31 @@ bind
 
 ##number
 ```
-       search n = [#number text]
-                  name = substring[text to:1]
+       search n = [#number text from]
+                  name = substring[text from to:from]
                   [#digit name]
-       bind  n <- [tail:substring[text from:2] val:string-to-number[text:name]]
+       bind  n <- [to: from + 1 val:string-to-number[text:name]]
 ```
 
 ## number fail
 ```
-       search n = [#number text]
-              not([#digit name:substring[text to:1]])
+       search n = [#number text from]
+              not([#digit name:substring[text from to:from]])
        bind n.fail := "not a number"
-```        
-              
+```
+
 ## expressions
 
 ### collapse stack
 - how do I pull the root out of this guy now? looks like i have to generate a height (but how)
 ```
-      search e = [#center-expression next prev]
+      search e = [#center-expression text from to next prev]
              nn = next.next
              pp = prev.prev
              right = if nn.precedence > e.precedence then nn else next
              left = if pp.precedence > e.precedence then pp else prev
+      bind @browser
+           [#div text: "zikky: {{substring[text from to]}} {{substring[text from:left.from to:left.to]}} {{substring[text from:right.from to:right.to]}}"]
       bind
              e.right := right
              e.left := left
@@ -52,32 +54,33 @@ bind
 
 ### center expression failure
 ```
-      search c = [#center-expression text parent]
+      search c = [#center-expression text parent from]
                  not(operator = [#operator name]
-                     name = substring[text to:string-length[text:name]])
+                     name = substring[text from to:from + string-length[text:name] - 1])
       bind   c.precedence := 0
              c.fail := "unknown operator"
-```      
-      
+```
+
 ### center expression success
 
 ```
-      search c = [#center-expression text parent]
+      search c = [#center-expression text parent from]
              operator = [#operator name]
              olength = string-length[text:name]
-             name = substring[text to:olength]
-             tail = substring[text from:olength + 1]
-      bind  c.next := [#left-expression parent text:tail prev:c]
-            c.precedence := operator.precedence
+             name = substring[text from to:olength + from - 1]
+      bind  c <- [next: [#left-expression parent text from: from + olength prev:c]
+                  precedence: operator.precedence
+                  to: from + olength - 1]
 ```
 
 ### left expression success
 ```
-         search e = [#left-expression val tail parent]
-         bind e.next := [#center-expression parent text:tail prev:e]
+         search e = [#left-expression val to text parent]
+         bind e.next := [#center-expression text parent from:to prev:e]
 ```
 
 ### left expression start
+
 ```
          search e = [#left-expression text parent]
          bind e.tag += "number"
@@ -87,7 +90,7 @@ bind
 ###start
 ```
           search parent = [#expression text]
-          bind [#left-expression text parent prev:[precedence:0]]
+          bind [#left-expression text from:1 parent prev:[precedence:0]]
 ```
 
 
