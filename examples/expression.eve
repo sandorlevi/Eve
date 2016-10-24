@@ -1,4 +1,4 @@
-ew# parse expression examples
+# parse expression examples
 ## operators and lexical classes
 ```
 bind
@@ -21,22 +21,26 @@ bind
 
 
 ##number
-TODO - substring isn't appropriately inclusive
 ```
        search n = [#number text]
-              name = substring[text to:2]
-              [#digit name]
+                  name = substring[text to:1]
+                  [#digit name]
        bind  n <- [tail:substring[text from:2] val:string-to-number[text:name]]
-       commit @browser
-             [#div text:"number {{string-to-number[text:name]}}"]
 ```
 
+## number fail
+```
+       search n = [#number text]
+              not([#digit name:substring[text to:1]])
+       bind n.fail := "not a number"
+```        
+              
 ## expressions
 
 ### collapse stack
 - how do I pull the root out of this guy now? looks like i have to generate a height (but how)
 ```
-      search e = [#center-node next prev]
+      search e = [#center-expression next prev]
              nn = next.next
              pp = prev.prev
              right = if nn.precedence > e.precedence then nn else next
@@ -46,32 +50,31 @@ TODO - substring isn't appropriately inclusive
              e.left := left
 ```
 
+### center expression failure
+```
+      search c = [#center-expression text parent]
+                 not(operator = [#operator name]
+                     name = substring[text to:string-length[text:name]])
+      bind   c.precedence := 0
+             c.fail := "unknown operator"
+```      
+      
 ### center expression success
 
 ```
       search c = [#center-expression text parent]
              operator = [#operator name]
-             olength = string-length[text:name] + 1
+             olength = string-length[text:name]
              name = substring[text to:olength]
-             tail = substring[text from:olength]
-      commit @browser [#div text:"center {{name}}"]
+             tail = substring[text from:olength + 1]
       bind  c.next := [#left-expression parent text:tail prev:c]
-            
+            c.precedence := operator.precedence
 ```
-
-### debuggo
-```
-search record = []
-       lookup[record attribute value]
-commit @browser [#div text:"la {{record}} {{attribute}} {{value}}"]
-```
-
 
 ### left expression success
 ```
          search e = [#left-expression val tail parent]
          bind e.next := [#center-expression parent text:tail prev:e]
-         commit @browser [#div text:"left {{val}}"]
 ```
 
 ### left expression start
@@ -85,12 +88,10 @@ commit @browser [#div text:"la {{record}} {{attribute}} {{value}}"]
 ```
           search parent = [#expression text]
           bind [#left-expression text parent prev:[precedence:0]]
-          commit @browser  [#div text:"start left"]
 ```
 
 
 ## test case
 ```
           bind [#expression text: "4+5*7"]
-          commit @browser  [#div text:"start"]
 ```

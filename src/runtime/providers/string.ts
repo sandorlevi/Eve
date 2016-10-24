@@ -48,8 +48,7 @@ class substring extends Constraint {
     let text = args[0]
     let to = text.length
     if (args[1] != undefined) from = args[1] - 1
-    // XXX - maybe to shouldn't be -1 since JS is exclusive and EVE is inclusive?
-    if (args[2] != undefined) to = args[2] - 1
+    if (args[2] != undefined) to = args[2]
     console.log("subby string", text.substring(from, to), from, to)
     return [text.substring(from, to)];
   }
@@ -60,8 +59,8 @@ class substring extends Constraint {
     let text = args[0]
     let to = text.length
     if (args[1] != undefined) from = args[1] - 1
-    if (args[2] != undefined) to = args[2] - 1
-    console.log("test string", text.substring(from, to), returns[0])
+    if (args[2] != undefined) to = args[2]
+    console.log("test string", text.substring(from, to), from, to, returns[0])
     return text.substring(from, to) === returns[0];
   }
 
