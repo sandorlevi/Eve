@@ -3,60 +3,101 @@
 ## Setup
 *Fruits* ***have*** **colors**
 - yellow
+  - sort of yellow
 - red
 - orange
 - `green`
 - white
 
 Add some fruits to the system
+
 ```
-  commit
-    [#fruit name: "lemon" color: "yellow"]
-    [#fruit name: "cherry" color: "red"]
-    [#fruit name: "orange" color: "orange"]
-    [#fruit name: "apple" color: "green"]
-    [#fruit name: "banana" color: "yellow"]
-    [#fruit #exotic name: "lychee" color: "white"]
-    [#fruit name: "papaya" color: "yellow"]
-    [#fruit name: "kiwi" color: "green"]
+commit
+  [#fruit name: "lemon" color: "yellow"]
+  [#fruit name: "cherry" color: "red"]
+  [#fruit name: "orange" color: "orange"]
+  [#fruit name: "apple" color: "green"]
+  [#fruit name: "banana" color: "yellow"]
+  [#fruit #exotic name: "lychee" color: "white"]
+  [#fruit name: "papaya" color: "yellow"]
+  [#fruit name: "kiwi" color: "green"]
 ```
 
 ### Drawing
 
-Draw a list of fruits
 ```
-  search
-    [#fruit color name]
-  bind @browser
-    [#div ix: name, text: name, style: [color]]
+search
+  row = [#fruit name color]
+
+bind @view
+  row = [name color]
+  [#table | field: ("name", "color") row]
+```
+
+1. Draw some stuff
+2. ...?
+3. Profit!
+
+Draw a list of fruits
+
+```
+search
+  fruit = [#fruit color name]
+bind @browser
+  [#div fruit ix: name, text: name, style: [color]]
 ```
 
 ## Interaction
 
-make yo
-```
-  search (@session, @browser)
-    v = [#click element]
-    element = [not(children) text]
+Toggle whether the attribute table is open for the clicked fruit.
 
-  commit @browser
-     element.children += [#div element zig:v text:"yo"]
 ```
+search @event
+  [#click element]
 
-trash yo
-```
-  search (@session, @browser)
-    [#click element]
-    element = [children]
+search (@session, @browser)
+  element = [fruit]
+  open = if fruit.open = true then false
+         else true
 
-  commit @browser
-     element.children -= children
+commit @session
+  fruit.open := open
 ```
 
-remove clicks
+While the fruit is open, add an attribute-table view for it.
+
 ```
-  search
-    c = [#click]
-  commit
-    c := none
+search
+  fruit = [#fruit open: true]
+
+bind @view
+  [#attribute-table entity: fruit]
+```
+
+```
+search
+  fruit = [#fruit name]
+
+bind @view
+  [#value value: name]
+```
+
+
+```
+search @inspector
+  inspector = [#inspector]
+
+bind @view
+  [#inspector-debugger inspector]
+```
+
+```
+search @browser
+  div = [#div fruit]
+
+search
+  open = fruit.open
+
+bind @browser
+  div.open := open
 ```

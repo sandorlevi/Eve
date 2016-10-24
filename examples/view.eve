@@ -1,0 +1,132 @@
+# Views
+
+## Simple
+
+### Value
+
+A `#value` view just embeds the `value`(s) its passed.
+
+```
+search @view
+  wrapper = [#value value]
+  ix = sort[value]
+  lookup[record: wrapper, attribute: "tag", value: "value", node]
+
+bind @browser
+  wrapper <- [#view #div node class: "view" children:
+    [#div sort: ix text: value]]
+```
+
+## Tables
+
+### Table
+
+A `#table` is a simple N-column N-row grid.
+
+Create the wrapper for the table.
+@NOTE: This needs to sort.
+
+```
+search @view
+  wrapper = [#table field row]
+  lookup[record: wrapper, attribute: "tag", value: "table", node]
+  lookup[record: row attribute: field value]
+
+bind @browser @view
+  wrapper <- [#view #table node class: "view" children:
+    [#thead wrapper sort: 0 children:
+      [#tr children:
+        [#td text: field]]]
+    [#tr row children:
+      [#td field text: value]]]
+```
+
+### KV Table
+
+A `#kv-table` is a two-column table which may have many values per key. All values for the same key will be grouped.
+
+Create the DOM structure for `#kv-table`s.
+
+```
+search @view
+  wrapper = [#kv-table kvs: [key]]
+  ix = sort[value: key]
+
+bind @browser
+  wrapper <- [#kv-table #view #div class: "view kv-table" children:
+    [#div #kv-row key class: "kv-row" sort: ix wrapper children:
+      [#div class: "kv-key" text: key]
+      [#div #kv-values class: "kv-values" wrapper key]]]
+```
+
+Inject the values for each key in the `#kv-table`.
+
+```
+search @view
+  wrapper = [#kv-table kvs: [key value]]
+  ix = sort[value per: key]
+
+search @browser
+  value-column = [#kv-values wrapper key]
+
+bind @browser
+  value-column.children += [#div value-column text: value sort: ix]
+```
+
+### Attribute Table
+
+**DEPRECATED** This is a hack, since we do not support dynamic scoping, you cannot control what scope it finds EAVs in. Do not use this.
+
+```
+search @view
+  wrapper = [#attribute-table entity]
+  lookup[record: wrapper, attribute: "tag", value: "attribute-table", node]
+
+search (@session, @browser)
+  lookup[record: entity attribute: key value]
+
+bind @view @browser
+  wrapper.node := node
+  wrapper.tag += "kv-table"
+  wrapper.kvs := [key value]
+```
+
+
+## Charts & Graphs
+
+### Bar Graph
+
+Since we don't have min/max yet, we calculate it separately with sort.
+
+```
+search @view
+  wrapper = [#bar-graph bar: [height]]
+  sort[value: height, direction: "down"] = 1
+
+bind @view
+  wrapper.max-height := height
+```
+
+```
+search @view
+  wrapper = [#bar-graph bar max-height]
+  lookup[record: wrapper, attribute: "tag", value: "bar-graph", node]
+
+  graph-height = if wrapper.height then wrapper.height
+                 else 300
+
+  graph-width = if wrapper.width then wrapper.width
+                 else 500
+
+  bar = [label height]
+  sort = if bar.sort then bar.sort
+         else bar
+  bar-count = count[given: bar]
+  bar-width = graph-width / bar-count
+
+  bar-height = (height / max-height) * (graph-height - 10) // padding!
+
+bind @browser
+  wrapper <- [#view #div node class: "view bar-graph" style: [width: graph-width, height: graph-height] children:
+    [#div class: "bar-graph-bar" label | sort style: [width: bar-width height: bar-height] text: label]]
+```

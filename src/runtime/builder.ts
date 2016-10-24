@@ -78,6 +78,9 @@ class BuilderContext {
 
   provide(node) {
     if(join.isVariable(node)) {
+      if(this.nonProviding && !this.myRegisters[node.id]) {
+        return;
+      }
       this.unprovided[node.id] = false;
     }
   }
@@ -104,6 +107,7 @@ class BuilderContext {
     while(!finished) {
       finished = true;
       for(let equality of block.equalities) {
+        if(equality === undefined) continue;
         let [left, right] = equality;
 
         if(left.type === "constant" && right.type === "constant") {
@@ -181,12 +185,10 @@ class BuilderContext {
       }
     }
 
-    if(!this.nonProviding) {
-      let unprovided = this.unprovided;
-      for(let ix = 0; ix < this.varIx; ix++) {
-        if(unprovided[ix] === undefined && this.myRegisters[ix]) {
-          unprovided[ix] = true;
-        }
+    let unprovided = this.unprovided;
+    for(let ix = 0; ix < this.varIx; ix++) {
+      if(unprovided[ix] === undefined && this.myRegisters[ix]) {
+        unprovided[ix] = true;
       }
     }
   }
@@ -208,6 +210,36 @@ class BuilderContext {
 // Scans
 //-----------------------------------------------------------
 
+function checkSubBlockEqualities(context, block) {
+  // if we have an equality that is with a constant, then we need to add
+  // a node for that equality since we couldn't fold the constant into the variable
+  let equalityIx = 0;
+  for(let equality of block.equalities) {
+    let [left, right] = equality;
+    let needsEquality;
+    let hasLeft = context.hasVariable(left);
+    let hasRight = context.hasVariable(right);
+    if(left.type === "constant" && (hasRight || right.type === "constant")) {
+      needsEquality = true;
+    } else if(right.type === "constant" && (hasLeft || left.type === "constant")) {
+      needsEquality = true;
+    } else if(hasLeft && hasRight) {
+      needsEquality = true;
+    } else if(hasLeft && !join.isVariable(context.getValue(left))) {
+      needsEquality = true;
+    } else if(hasRight && !join.isVariable(context.getValue(right))) {
+      needsEquality = true;
+    }
+    // console.log("branch equality", left, right, leftVal, rightVal);
+    if(needsEquality) {
+      let expression = {type: "expression", op: "=", args: equality};
+      block.expressions.push(expression)
+      block.equalities[equalityIx] = undefined;
+    }
+    equalityIx++;
+  }
+}
+
 function buildScans(block, context, scanLikes, outputScans) {
   let {unprovided} = block;
   for(let scanLike of scanLikes) {
@@ -219,38 +251,50 @@ function buildScans(block, context, scanLikes, outputScans) {
           for(let item of attribute.value.items) {
             let value = context.getValue(item)
             context.provide(value);
-            let final = join.scan(entity, attribute.attribute, value, undefined, scanLike.scopes);
+            let final = new join.Scan(item.id + "|build", entity, attribute.attribute, value, undefined, scanLike.scopes);
             outputScans.push(final);
             item.buildId = final;
           }
         } else {
           let value = context.getValue(attribute.value)
           context.provide(value);
-          let final = join.scan(entity, attribute.attribute, value, undefined, scanLike.scopes);
+          let final = new join.Scan(attribute.id + "|build", entity, attribute.attribute, value, undefined, scanLike.scopes);
           outputScans.push(final);
           attribute.buildId = final.id;
         }
       }
     } else if(scanLike.type === "scan") {
-      let entity = context.getValue(scanLike.entity);
+      let entity;
+      if(scanLike.entity) {
+        entity = context.getValue(scanLike.entity);
+      }
       if(!scanLike.needsEntity) {
         context.provide(entity);
       }
-      let attribute = context.getValue(scanLike.attribute);
-      context.provide(attribute);
-      let value = context.getValue(scanLike.value)
-      context.provide(value);
+      let attribute;
+      if(scanLike.attribute) {
+        attribute = context.getValue(scanLike.attribute);
+        context.provide(attribute);
+      }
+      let value;
+      if(scanLike.value) {
+        value = context.getValue(scanLike.value)
+        context.provide(value);
+      }
       let node;
       if(scanLike.node) {
         node = context.getValue(scanLike.node)
         context.provide(node);
       }
-      let final = join.scan(entity, attribute, value, node, scanLike.scopes);
+      let final = new join.Scan(scanLike.id + "|build", entity, attribute, value, node, scanLike.scopes);
       outputScans.push(final);
       scanLike.buildId = final.id;
     } else if(scanLike.type === "not") {
+      checkSubBlockEqualities(context, scanLike);
+
       let notContext = context.extendTo(scanLike);
       notContext.nonProviding = true;
+
       let args = [];
       let seen = [];
       let blockVars = block.variables;
@@ -264,7 +308,7 @@ function buildScans(block, context, scanLikes, outputScans) {
         }
       }
       let {strata} = buildStrata(scanLike, notContext);
-      let final = new join.NotScan(args, strata);
+      let final = new join.NotScan(scanLike.id + "|build", args, strata);
       outputScans.push(final);
       scanLike.buildId = final.id;
     } else if(scanLike.type === "ifExpression") {
@@ -280,16 +324,9 @@ function buildScans(block, context, scanLikes, outputScans) {
         }
       }
       for(let branch of scanLike.branches) {
+        checkSubBlockEqualities(context, branch.block);
+
         let branchContext = context.extendTo(branch.block);
-        // if we have an equality that is with a constant, then we need to add
-        // a node for that equality since we couldn't fold the constant into the variable
-        for(let equality of branch.block.equalities) {
-          let [left, right] = equality;
-          if(left.type === "constant" || right.type === "constant" || (context.hasVariable(left) && context.hasVariable(right))) {
-            let expression = {type: "expression", op: "=", args: equality};
-            branch.block.expressions.push(expression)
-          }
-        }
         for(let variableName in branch.block.variables) {
           let cur = blockVars[variableName];
           if(!cur) continue;
@@ -307,7 +344,7 @@ function buildScans(block, context, scanLikes, outputScans) {
         if(strata.length > 1) {
           hasAggregate = true;
         }
-        let final = new join.IfBranch(strata, outputs, branch.exclusive);
+        let final = new join.IfBranch(branch.id + "|build", strata, outputs, branch.exclusive);
         branches.push(final);
         branch.buildId = final.id;
       }
@@ -317,7 +354,7 @@ function buildScans(block, context, scanLikes, outputScans) {
         outputs.push(resolved);
         context.provide(resolved);
       }
-      let ifScan = new join.IfScan(args, outputs, branches, hasAggregate);
+      let ifScan = new join.IfScan(scanLike.id + "|build", args, outputs, branches, hasAggregate);
       outputScans.push(ifScan)
       scanLike.buildId = ifScan.id;
     } else {
@@ -346,7 +383,7 @@ function buildExpressions(block, context, expressions, outputScans) {
       }
       let impl = providers.get(expression.op);
       if(impl) {
-        outputScans.push(new impl(args, results));
+        outputScans.push(new impl(`${expression.id}|build`, args, results));
       } else {
         context.errors.push(errors.unimplementedExpression(block, expression));
       }
@@ -388,13 +425,13 @@ function buildExpressions(block, context, expressions, outputScans) {
           // @TODO: mark this variable as generated?
           let variable = context.createVariable();
           let klass = providers.get("=");
-          outputScans.push(new klass([variable, resolved], []))
+          outputScans.push(new klass(`${resolved}|${resultIx}|equality|build`, [variable, resolved], []))
           resolved = results[resultIx] = variable;
         }
         resultIx++;
       }
 
-      outputScans.push(new impl(args, results));
+      outputScans.push(new impl(`${expression.id}|build`, args, results));
     } else {
       throw new Error("Not implemented: function type " + expression.type);
     }
@@ -439,7 +476,7 @@ function buildActions(block, context, actions, scans) {
                 projection[value.id] = value;
               }
             }
-            let final = new impl(entity, attribute.attribute, value, undefined, action.scopes);
+            let final = new impl(`${attribute.id}|${item.id}|build`, entity, attribute.attribute, value, undefined, action.scopes);
             actionObjects.push(final);
             item.buildId = final.id;
           }
@@ -450,7 +487,7 @@ function buildActions(block, context, actions, scans) {
               projection[value.id] = value;
             }
           }
-          let final = new impl(entity, attribute.attribute, value, undefined, action.scopes);
+          let final = new impl(`${attribute.id}|build`, entity, attribute.attribute, value, undefined, action.scopes);
           actionObjects.push(final);
           attribute.buildId = final.id;
         }
@@ -459,14 +496,14 @@ function buildActions(block, context, actions, scans) {
       if(unprovided[entity.id]) {
         projection = projection.filter((x) => x);
         let klass = providers.get("generateId");
-        scans.push(new klass(projection, [entity]));
+        scans.push(new klass(`${action.id}|${entity.id}|build`, projection, [entity]));
         context.provide(entity);
       }
     } else if(action.type === "action") {
       let {entity, value, attribute} = action;
       let impl = ActionImplementations[action.action];
       if(action.action === "erase") {
-        let final = new impl(context.getValue(entity), attribute, undefined, undefined, action.scopes);
+        let final = new impl(`${action.id}|build`, context.getValue(entity), attribute, undefined, undefined, action.scopes);
         actionObjects.push(final);
         action.buildId = final.id;
       } else {
@@ -477,12 +514,12 @@ function buildActions(block, context, actions, scans) {
         attribute = typeof attribute === "string" ? attribute : context.getValue(attribute);
         if(value.type === "parenthesis") {
           for(let item of value.items) {
-            let final = new impl(context.getValue(entity), attribute, context.getValue(item), undefined, action.scopes);
+            let final = new impl(`${action.id}|${item.id}|build`, context.getValue(entity), attribute, context.getValue(item), undefined, action.scopes);
             actionObjects.push(final);
             item.buildId = final.id;
           }
         } else {
-          let final = new impl(context.getValue(entity), attribute, context.getValue(value), undefined, action.scopes);
+          let final = new impl(`${action.id}|build`, context.getValue(entity), attribute, context.getValue(value), undefined, action.scopes);
           actionObjects.push(final);
           action.buildId = final.id;
         }
@@ -605,8 +642,10 @@ function stratify(scans) {
       if(levelMax > scanLevel) {
         changed = true;
         blockLevel[scan.id] = levelMax;
-        for(let variable of returnVariables) {
-          maybeLevelVariable(scan, levelMax, variable);
+        if(returnVariables) {
+          for(let variable of returnVariables) {
+            maybeLevelVariable(scan, levelMax, variable);
+          }
         }
       }
     }

@@ -81,7 +81,7 @@ let wss = new WebSocketServer({server: server});
 function handleEvent(evaluation, data) {
   let actions = [];
   for(let insert of data.insert) {
-    actions.push(new ActionImplementations["+="](insert[0], insert[1], insert[2]));
+    actions.push(new ActionImplementations["+="]("add", insert[0], insert[1], insert[2]));
   }
   evaluation.executeActions(actions);
 }
@@ -96,9 +96,10 @@ wss.on('connection', function connection(ws) {
     if(data.type === "init") {
       let {url} = data;
       fs.stat("." + url, (err, stats) => {
-        if(err) return;
+        if(err || !stats.isFile()) {
+          ws.send(JSON.stringify({type: "initLocal"}));
 
-        if(stats.isFile()) {
+        } else {
           let content = fs.readFileSync("." + url).toString();
           ws.send(JSON.stringify({type: "initLocal", code: content}));
           // let parsed = parser.parseDoc(content);

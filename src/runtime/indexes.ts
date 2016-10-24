@@ -2,8 +2,6 @@
 // Indexes
 //---------------------------------------------------------------------
 
-let perf = global["perf"];
-
 export class MultiIndex {
   indexes: {[name: string]: TripleIndex};
   scopes: string[];
@@ -256,6 +254,15 @@ class IndexLevel {
       return;
     }
     return updated;
+  }
+
+  toValues() {
+    let values = [];
+    for(let key of Object.keys(this.index)) {
+      let value: any = this.index[key];
+      values.push(value.value || value);
+    }
+    return values;
   }
 
   lookup(a,b?,c?,d?,e?,f?,g?,h?,i?,j?) {

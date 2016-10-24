@@ -24,16 +24,24 @@ class AnalysisContext {
   ScanId = 0;
   changes: Changes
   block: ParseBlock
+  spans: any[];
+  extraInfo: any;
 
-  record(parseNode: any) {
+  constructor(spans, extraInfo) {
+    this.spans = spans;
+    this.extraInfo = extraInfo;
+  }
+
+  record(parseNode: any, kind: "action" | "scan") {
     let changes = this.changes;
-    let recordId = `${this.block.id}|record|${this.ScanId++}`;
+    let recordId = parseNode.id;
     let [start, stop] = nodeToBoundaries(parseNode);
     changes.store("session", recordId, "tag", "record", "analyzer");
     changes.store("session", recordId, "block", this.block.id, "analyzer");
     changes.store("session", recordId, "start", start, "analyzer");
     changes.store("session", recordId, "stop", stop, "analyzer");
     changes.store("session", recordId, "entity", parseNode.variable.id, "analyzer");
+    changes.store("session", recordId, "kind", kind, "analyzer");
     for(let scope of parseNode.scopes) {
       changes.store("session", recordId, "scopes", scope, "analyzer");
     }
@@ -42,21 +50,23 @@ class AnalysisContext {
 
   scan(parseNode: any, scopes: string[], entity: any, attribute: string, value: any) {
     let changes = this.changes;
-    let scanId = `${this.block.id}|scan|${this.ScanId++}`;
+    let scanId = parseNode.id;
     let [start, stop] = nodeToBoundaries(parseNode, this.block.start);
     changes.store("session", scanId, "tag", "scan", "analyzer");
     changes.store("session", scanId, "block", this.block.id, "analyzer");
     changes.store("session", scanId, "start", start, "analyzer");
     changes.store("session", scanId, "stop", stop, "analyzer");
     changes.store("session", scanId, "entity", entity.id, "analyzer");
-    changes.store("session", scanId, "attribute", attribute, "analyzer");
+    if(attribute !== undefined) {
+      changes.store("session", scanId, "attribute", attribute, "analyzer");
+    }
     if(parseNode.buildId !== undefined) {
       changes.store("session", scanId, "build-node", parseNode.buildId, "analyzer");
     }
-    if(value.id !== undefined) {
+    if(value && value.id !== undefined) {
       changes.store("session", scanId, "value", value.id, "analyzer");
       changes.store("session", value.id, "tag", "variable", "analyzer");
-    } else {
+    } else if(value !== undefined) {
       changes.store("session", scanId, "value", value, "analyzer");
     }
     for(let scope of scopes) {
@@ -67,7 +77,7 @@ class AnalysisContext {
 
   provide(parseNode: any, scopes: string[], entity: any, attribute: string, value: any) {
     let changes = this.changes;
-    let actionId = `${this.block.id}|action|${this.ScanId++}`;
+    let actionId = parseNode.id;
     let [start, stop] = nodeToBoundaries(parseNode, this.block.start);
     changes.store("session", actionId, "tag", "action", "analyzer");
     changes.store("session", actionId, "block", this.block.id, "analyzer");
@@ -128,27 +138,27 @@ class Analysis {
   }
 
   _scanRecord(context: AnalysisContext, node) {
-    context.record(node);
+    context.record(node, "scan");
     for(let attr of node.attributes) {
       if(attr.value.type === "parenthesis") {
         for(let item of attr.value.items) {
           let id = context.scan(item, node.scopes, node.variable, attr.attribute, context.value(item));
-          this._link(context, id, item.id)
         }
       } else {
         let id = context.scan(attr, node.scopes, node.variable, attr.attribute, context.value(attr.value));
-        this._link(context, id, attr.id)
       }
     }
   }
 
   _scanScan(context: AnalysisContext, node) {
-    if(node.attribute.type === "variable") {
-      let id = context.scan(node, node.scopes, context.value(node.entity), "any", context.value(node.value));
-      this._link(context, id, node.id)
+    if(node.attribute === undefined || node.attribute.type === "variable") {
+      let value;
+      if(node.value !== undefined) {
+        value = context.value(node.value);
+      }
+      let id = context.scan(node, node.scopes, context.value(node.entity), undefined, value);
     } else {
       let id = context.scan(node, node.scopes, context.value(node.entity), context.value(node.attribute), context.value(node.value));
-      this._link(context, id, node.id)
     }
   }
 
@@ -189,16 +199,14 @@ class Analysis {
   }
 
   _actionRecord(context: AnalysisContext, node) {
-    context.record(node);
+    context.record(node, "action");
     for(let attr of node.attributes) {
       if(attr.value.type === "parenthesis") {
         for(let item of attr.value.items) {
           let id = context.provide(item, node.scopes, node.variable, attr.attribute, context.value(item));
-          this._link(context, id, attr.id)
         }
       } else {
         let id = context.provide(attr, node.scopes, node.variable, attr.attribute, context.value(attr.value));
-        this._link(context, id, attr.id)
       }
     }
   }
@@ -210,15 +218,15 @@ class Analysis {
       // } else {
       //   context.provide(node.scopes, "all", "");
       // }
-    } else if(typeof node.attribute === "string") {
-      let id = context.provide(node, node.scopes, node.entity, node.attribute, context.value(node.value));
-      this._link(context, id, node.id)
-    } else if(node.attribute.type === "variable") {
-      let id = context.provide(node, node.scopes, node.entity, "any", context.value(node.value));
-      this._link(context, id, node.id)
     } else {
-      let id = context.provide(node, node.scopes, node.entity, context.value(node.attribute), context.value(node.value));
-      this._link(context, id, node.id)
+      let attribute = typeof node.attribute === "string" ? node.attribute : context.value(node.attribute);
+      if(node.value.type === "parenthesis") {
+        for(let item of node.value.items) {
+          let id = context.provide(item, node.scopes, node.entity, attribute, context.value(item));
+        }
+      } else {
+        let id = context.provide(node, node.scopes, node.entity, attribute, context.value(node.value));
+      }
     }
   }
 
@@ -322,13 +330,13 @@ class Analysis {
   // Public
   //---------------------------------------------------------------------
 
-  block(block: ParseBlock) {
-    let context = this.createContext(block);
+  block(block: ParseBlock, spans, extraInfo) {
+    let context = this.createContext(block, spans, extraInfo);
     this._block(context, block);
   }
 
-  createContext(block: ParseBlock) {
-    let context = new AnalysisContext();
+  createContext(block: ParseBlock, spans, extraInfo) {
+    let context = new AnalysisContext(spans, extraInfo);
     context.block = block;
     context.changes = this.changes;
     return context;
@@ -364,9 +372,12 @@ export class EditorDatabase extends Database {
 
 function makeEveAnalyzer() {
   if(eve) return eve;
-  let {results, errors} = parser.parseDoc(global["examples"]["analyzer.eve"]);
+  let {results, errors} = parser.parseDoc(global["examples"]["analyzer.eve"], "analyzer");
   let {text, spans, extraInfo} = results;
-  let {blocks} = builder.buildDoc(results);
+  let {blocks, errors: buildErrors} = builder.buildDoc(results);
+  if(errors.length || buildErrors.length) {
+    console.error("ANALYZER CREATION ERRORS", errors, buildErrors);
+  }
   let browserDb = new BrowserSessionDatabase(browser.responder);
   let session = new Database();
   session.blocks = blocks;
@@ -379,6 +390,7 @@ function makeEveAnalyzer() {
 let eve;
 
 export function analyze(blocks: ParseBlock[], spans: any[], extraInfo: any) {
+  console.time();
   eve = makeEveAnalyzer();
   let session = new Database();
   let prev = eve.getDatabase("session")
@@ -389,17 +401,21 @@ export function analyze(blocks: ParseBlock[], spans: any[], extraInfo: any) {
   let editorDb = new EditorDatabase(spans, extraInfo);
   eve.unregisterDatabase("editor");
   eve.registerDatabase("editor", editorDb);
+  eve.fixpoint();
   let changes = eve.createChanges();
   let analysis = new Analysis(changes);
   for(let block of blocks) {
-    analysis.block(block);
+    analysis.block(block, spans, extraInfo);
   }
-  eve.executeActions([], changes);
+  changes.commit();
+  console.log(changes);
+  console.timeEnd();
+  // eve.executeActions([], changes);
 }
 
 
 let prevQuery;
-export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[], extraInfo: any) {
+function doQuery(queryId, query, spans, extraInfo) {
   eve = makeEveAnalyzer();
   let editorDb = new EditorDatabase(spans, extraInfo);
   eve.unregisterDatabase("editor");
@@ -408,11 +424,16 @@ export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[],
   if(prevQuery) {
     changes.unstoreObject(prevQuery.queryId, prevQuery.query, "analyzer", "session");
   }
-  let queryId = `query|${tokenId}`;
-  let query = {tag: "query", token: tokenId};
   changes.storeObject(queryId, query, "analyzer", "session");
   eve.executeActions([], changes);
   prevQuery = {queryId, query};
+  return eve;
+}
+
+export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[], extraInfo: any) {
+  let queryId = `query|${tokenId}`;
+  let query = {tag: "query", token: tokenId};
+  let eve = doQuery(queryId, query, spans, extraInfo);
 
   // look at the results and find out which action node we were looking
   // at
@@ -459,8 +480,342 @@ export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[],
   }
 }
 
+export function findCardinality(evaluation: Evaluation, info: any, spans: any[], extraInfo: any) {
+  let queryId = `query|${info.requestId}`;
+  let query = {tag: ["query", "findCardinality"], token: info.variable};
+  let eve = doQuery(queryId, query, spans, extraInfo);
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let evSession = evaluation.getDatabase("session");
+  let lookup = {};
+  let blockId;
+  let cardinalities;
+
+  let queryInfo = sessionIndex.alookup("tag", "query");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(obj.register) {
+      for(let variable of obj.register) {
+        let varObj = sessionIndex.asObject(variable);
+        if(varObj) {
+          if(!blockId) {
+            let found;
+            blockId = varObj.block[0];
+            for(let block of evSession.blocks) {
+              if(block.id === blockId) {
+                found = block;
+                break;
+              }
+            }
+            cardinalities = resultsToCardinalities(found.results);
+          }
+          lookup[varObj.token[0]] = cardinalities[varObj.register[0]].cardinality;
+        }
+      }
+    }
+  }
+  info.cardinality = lookup;
+  return info;
+}
+
+export function findValue(evaluation: Evaluation, info: any, spans: any[], extraInfo: any) {
+  let queryId = `query|${info.requestId}`;
+  let query = {tag: ["query", "findValue"], token: info.variable};
+  let eve = doQuery(queryId, query, spans, extraInfo);
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let evSession = evaluation.getDatabase("session");
+  let lookup = {};
+  let blockId, found;
+  let rows = [];
+  let varToRegister = {};
+  let names = {};
+
+  let queryInfo = sessionIndex.alookup("tag", "query");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(obj.register) {
+      for(let variable of obj.register) {
+        let varObj = sessionIndex.asObject(variable);
+        if(varObj) {
+          if(!blockId) {
+            blockId = varObj.block[0];
+            for(let block of evSession.blocks) {
+              if(block.id === blockId) {
+                found = block;
+                break;
+              }
+            }
+          }
+          if(varObj.attribute) {
+            for(let attribute of varObj.attribute) {
+              varToRegister[attribute] = varObj.register[0];
+            }
+          }
+          lookup[varObj.token[0]] = varObj.register[0];
+          names[varObj.token[0]] = varObj.name[0];
+        }
+      }
+    }
+  }
+  if(info.given) {
+    let keys = Object.keys(info.given);
+    let registers = [];
+    let registerValues = [];
+    for(let key of keys) {
+      let reg = varToRegister[key];
+      if(reg !== undefined && registers.indexOf(reg) === -1) {
+        registers.push(reg);
+        registerValues.push(info.given[key][0]);
+      }
+    }
+    rows = findResultRows(found.results, registers, registerValues);
+  } else {
+    rows = found.results;
+  }
+  info.rows = rows.slice(0,100);
+  info.totalRows = rows.length;
+  info.variableMappings = lookup;
+  info.variableNames = names;
+  return info;
+}
+
+
+export function nodeIdToRecord(evaluation, nodeId, spans, extraInfo) {
+  let queryId = `query|${nodeId}`;
+  let query = {tag: "query", "build-node": nodeId};
+  let eve = doQuery(queryId, query, spans, extraInfo);
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "query");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(obj.pattern) {
+      return obj.pattern[0]
+    }
+  }
+  return;
+}
+
+export function findRecordsFromToken(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query: any = {tag: ["findRecordsFromToken"]};
+  if(info.token) query.token = info.token;
+
+  let evSession = evaluation.getDatabase("session");
+  let evBrowser = evaluation.getDatabase("browser");
+  evSession.nonExecuting = true;
+  evBrowser.nonExecuting = true;
+  eve.registerDatabase("evaluation-session", evSession);
+  eve.registerDatabase("evaluation-browser", evBrowser);
+  doQuery(queryId, query, spans, extraInfo);
+  eve.unregisterDatabase("evaluation-session");
+  eve.unregisterDatabase("evaluation-browser");
+  evSession.nonExecuting = false;
+  evBrowser.nonExecuting = false;
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findRecordsFromToken");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    console.log("FIND RECORDS", obj);
+    if(obj.record) {
+      return info.record = obj.record;
+    } else {
+      info.record = [];
+      return info;
+    }
+  }
+  return;
+}
+
+
+export function findSource(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query: any = {tag: ["query", "findSource"]};
+  if(info.record) query.recordId = info.record;
+  if(info.attribute) query.attribute = info.attribute;
+  if(info.span) query.span = info.span;
+
+  let evSession = evaluation.getDatabase("session");
+  let evBrowser = evaluation.getDatabase("browser");
+  evSession.nonExecuting = true;
+  evBrowser.nonExecuting = true;
+  eve.registerDatabase("evaluation-session", evSession);
+  eve.registerDatabase("evaluation-browser", evBrowser);
+  doQuery(queryId, query, spans, extraInfo);
+  eve.unregisterDatabase("evaluation-session");
+  eve.unregisterDatabase("evaluation-browser");
+  evSession.nonExecuting = false;
+  evBrowser.nonExecuting = false;
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findSource");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    console.log("FIND SOURCE", obj);
+    if(obj.source) {
+      info.source = obj.source.map((source) => sessionIndex.asObject(source, false, true));
+      return info;
+    } else if(obj.block) {
+      info.block = obj.block;
+      return info;
+    } else {
+      info.block = [];
+      info.source = [];
+      return info;
+    }
+  }
+  return;
+}
+
+export function findRelated(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query: any = {tag: ["query", "findRelated"]};
+  let queryType;
+  if(info.span) {
+    query.span = info.span;
+    queryType = "span";
+  }
+  if(info.variable) {
+    query.variable = info.variable;
+    queryType = "variable"
+  }
+  query.for = queryType
+
+  let evSession = evaluation.getDatabase("session");
+  eve.registerDatabase("evaluation-session", evSession);
+  doQuery(queryId, query, spans, extraInfo);
+  eve.unregisterDatabase("evaluation-session");
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findRelated");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(queryType === "span" && obj.variable) {
+      info.variable = obj.variable;
+    } else if(queryType === "variable" && obj.span) {
+      info.span = obj.span;
+    } else {
+      info.variable = [];
+      info.span = [];
+    }
+    return info;
+  }
+  return;
+}
+
+export function findAffector(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query: any = {tag: ["query", "findAffector"]};
+  if(info.record) query.recordId = info.record;
+  if(info.attribute) query.attribute = info.attribute;
+  if(info.span) query.span = info.span;
+
+  let evSession = evaluation.getDatabase("session");
+  let evBrowser = evaluation.getDatabase("browser");
+  evSession.nonExecuting = true;
+  evBrowser.nonExecuting = true;
+  eve.registerDatabase("evaluation-session", evSession);
+  eve.registerDatabase("evaluation-browser", evBrowser);
+  doQuery(queryId, query, spans, extraInfo);
+  eve.unregisterDatabase("evaluation-session");
+  eve.unregisterDatabase("evaluation-browser");
+  evSession.nonExecuting = false;
+  evBrowser.nonExecuting = false;
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findAffector");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    console.log("FIND AFFECTOR", obj);
+    if(obj.affector) {
+      info.affector = obj.affector.map((affector) => sessionIndex.asObject(affector, false, true));
+      return info;
+    } else {
+      info.affector = [];
+      return info;
+    }
+  }
+  return;
+}
+
+export function findFailure(evaluation, info, spans, extraInfo) {
+  let evSession = evaluation.getDatabase("session");
+  let failingSpans = info.span = [];
+  let sessionIndex = eve.getDatabase("session").index;
+
+  for(let queryBlockId of info.block) {
+    let found;
+    for(let block of evSession.blocks) {
+      if(block.id === queryBlockId) {
+        found = block;
+        break;
+      }
+    }
+    let scan = blockToFailingScan(found);
+    if(scan) {
+      let level = sessionIndex.alookup("build-node", scan.id);
+      if(level) {
+        let analyzerScanId = level.toValues()[0];
+        let analyzerScan = sessionIndex.asObject(analyzerScanId, false, true);
+
+        failingSpans.push({id: analyzerScanId, buildId: scan.id, block: found.id, start: analyzerScan.start, stop: analyzerScan.stop});
+      }
+    }
+  }
+  return info;
+}
+
+export function findRootDrawers(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query = {tag: "findRootDrawers"};
+  let eve = doQuery(queryId, query, spans, extraInfo);
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findRootDrawers");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(obj.drawer) {
+      info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
+    } else {
+      info.drawers = [];
+    }
+  }
+  return info;
+}
+
+export function findMaybeDrawers(evaluation, info, spans, extraInfo) {
+  let queryId = `query|${info.requestId}`;
+  let query = {tag: "findMaybeDrawers"};
+  let eve = doQuery(queryId, query, spans, extraInfo);
+
+  let sessionIndex = eve.getDatabase("session").index;
+  let queryInfo = sessionIndex.alookup("tag", "findMaybeDrawers");
+  if(queryInfo) {
+    let [entity] = queryInfo.toValues();
+    let obj = sessionIndex.asObject(entity);
+    if(obj.drawer) {
+      info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
+    } else {
+      info.drawers = [];
+    }
+  }
+  return info;
+}
+
+
+
 function blockToFailingScan(block) {
-  let scanId;
+  let scan;
   for(let stratum of block.strata) {
     if(stratum.resultCount === 0) {
       let {solverInfo} = stratum;
@@ -474,10 +829,11 @@ function blockToFailingScan(block) {
         }
         scanIx++;
       }
-      scanId = stratum.scans[maxIx].id;
+      scan = stratum.scans[maxIx];
+      break;
     }
   }
-  return scanId;
+  return scan;
 }
 
 function resultsToCardinalities(results) {
@@ -503,10 +859,19 @@ function resultsToCardinalities(results) {
   return cardinalities;
 }
 
-function findResultRows(results, register, value) {
+function findResultRows(results, registers, values) {
   let found = [];
   for(let result of results) {
-    if(result[register] === value) {
+    let skip;
+    let ix = 0;
+    for(let register of registers) {
+      if(result[register] !== values[ix]) {
+        skip = true;
+        break;
+      }
+      ix++;
+    }
+    if(!skip) {
       found.push(result);
     }
   }

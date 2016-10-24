@@ -8,7 +8,7 @@ import * as client from "../client";
 import * as parser from "./parser";
 import * as builder from "./builder";
 import {ActionImplementations} from "./actions";
-import {BrowserSessionDatabase, BrowserEventDatabase} from "./databases/browserSession";
+import {BrowserSessionDatabase, BrowserEventDatabase, BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase} from "./databases/browserSession";
 import {HttpDatabase} from "./databases/http";
 import * as system from "./databases/system";
 import * as analyzer from "./analyzer";
@@ -24,7 +24,9 @@ class Responder {
   }
 
   send(json) {
-    this.socket.onmessage({data: json});
+    setTimeout(() => {
+      this.socket.onmessage({data: json});
+    }, 0);
   }
 
   sendErrors(errors) {
@@ -42,11 +44,11 @@ class Responder {
     let data = JSON.parse(json);
     if(data.type === "event") {
       if(!evaluation) return;
-      console.info("EVENT", json);
+      // console.info("EVENT", json);
       let scopes = ["event"];
       let actions = [];
       for(let insert of data.insert) {
-        actions.push(new ActionImplementations["+="](insert[0], insert[1], insert[2], "event", scopes));
+        actions.push(new ActionImplementations["+="]("event", insert[0], insert[1], insert[2], "event", scopes));
       }
       evaluation.executeActions(actions);
     } else if(data.type === "close") {
@@ -54,12 +56,10 @@ class Responder {
       evaluation.close();
       evaluation = undefined;
     } else if(data.type === "parse") {
-      join.nextId(0);
-      let {results, errors} = parser.parseDoc(data.code || "", "editor");
+      let {results, errors} = parser.parseDoc(data.code || "", "user");
       let {text, spans, extraInfo} = results;
-      let {blocks, errors: buildErrors} = builder.buildDoc(results);
-      // analyzer.analyze(results.blocks, spans, extraInfo);
-      if(errors && errors.length) console.error(errors);
+      let build = builder.buildDoc(results);
+      let {blocks, errors: buildErrors} = build;
       this.lastParse = results;
       for(let error of buildErrors) {
         error.injectSpan(spans, extraInfo);
@@ -69,13 +69,16 @@ class Responder {
       if(evaluation !== undefined && data.persist) {
         let changes = evaluation.createChanges();
         let session = evaluation.getDatabase("session");
-        join.nextId(0);
         for(let block of session.blocks) {
           if(block.bindActions.length) {
             block.updateBinds({positions: {}, info: []}, changes);
           }
         }
-        let {blocks, errors} = builder.buildDoc(this.lastParse);
+        let build = builder.buildDoc(this.lastParse);
+        let {blocks, errors} = build;
+        let spans = [];
+        let extraInfo = {};
+        analyzer.analyze(blocks.map((block) => block.parse), spans, extraInfo);
         this.sendErrors(errors);
         for(let block of blocks) {
           if(block.singleRun) block.dormant = true;
@@ -87,18 +90,28 @@ class Responder {
         evaluation.fixpoint(changes);
       } else {
         if(evaluation) evaluation.close();
-        join.nextId(0);
-        let {blocks, errors} = builder.buildDoc(this.lastParse);
+        let build = builder.buildDoc(this.lastParse);
+        let {blocks, errors} = build;
         this.sendErrors(errors);
-        // analyzer.analyze(results.blocks);
+        let spans = [];
+        let extraInfo = {};
+        analyzer.analyze(blocks.map((block) => block.parse), spans, extraInfo);
         let browser = new BrowserSessionDatabase(responder);
         let event = new BrowserEventDatabase();
+        let view = new BrowserViewDatabase();
+        let editor = new BrowserEditorDatabase();
+        let inspector = new BrowserInspectorDatabase();
         let session = new Database();
         session.blocks = blocks;
         evaluation = new Evaluation();
         evaluation.registerDatabase("session", session);
-        evaluation.registerDatabase("event", event);
         evaluation.registerDatabase("browser", browser);
+        evaluation.registerDatabase("event", event);
+
+        evaluation.registerDatabase("view", view);
+        evaluation.registerDatabase("editor", editor);
+        evaluation.registerDatabase("inspector", inspector);
+
         evaluation.registerDatabase("system", system.instance);
         evaluation.registerDatabase("http", new HttpDatabase());
         evaluation.fixpoint();
@@ -110,8 +123,58 @@ class Responder {
       let extraInfo = {};
       analyzer.tokenInfo(evaluation, data.tokenId, spans, extraInfo)
       this.send(JSON.stringify({type: "comments", spans, extraInfo}))
+    } else if(data.type === "findNode") {
+      let {recordId, node} = data;
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.nodeIdToRecord(evaluation, data.node, spans, extraInfo);
+      this.send(JSON.stringify({type: "findNode", recordId, spanId}));
+    } else if(data.type === "findSource") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findSource(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findRelated") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findRelated(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findValue") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findValue(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findCardinality") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findCardinality(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findAffector") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findAffector(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findFailure") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findFailure(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findRootDrawers") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findRootDrawers(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findMaybeDrawers") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findMaybeDrawers(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
+    } else if(data.type === "findRecordsFromToken") {
+      let spans = [];
+      let extraInfo = {};
+      let spanId = analyzer.findRecordsFromToken(evaluation, data, spans, extraInfo);
+      this.send(JSON.stringify(data));
     }
-
   }
 }
 
@@ -121,26 +184,43 @@ export function init(code) {
   responder = new Responder(client.socket);
 
   global["browser"] = true;
-  let {results, errors} = parser.parseDoc(code || "", "editor");
+  let {results, errors} = parser.parseDoc(code || "", "user");
   if(errors && errors.length) console.error(errors);
-  responder.lastParse = results;
   let {text, spans, extraInfo} = results;
   responder.send(JSON.stringify({type: "parse", text, spans, extraInfo}));
-  let {blocks, errors: buildErrors} = builder.buildDoc(results);
-  console.log("BLOCKS", blocks);
+  let build = builder.buildDoc(results);
+  let {blocks, errors: buildErrors} = build;
+  console.log("PROGRAM BLOCKS", blocks);
+  responder.lastParse = results;
+  analyzer.analyze(blocks.map((block) => block.parse), spans, extraInfo);
   responder.sendErrors(buildErrors);
-  // analyzer.analyze(results.blocks, spans, extraInfo);
   let browser = new BrowserSessionDatabase(responder);
   let event = new BrowserEventDatabase();
+  let view = new BrowserViewDatabase();
+  let editor = new BrowserEditorDatabase();
+  let inspector = new BrowserInspectorDatabase();
   let session = new Database();
   session.blocks = blocks;
   evaluation = new Evaluation();
   evaluation.registerDatabase("session", session);
   evaluation.registerDatabase("browser", browser);
   evaluation.registerDatabase("event", event);
+
+  evaluation.registerDatabase("view", view);
+  evaluation.registerDatabase("editor", editor);
+  evaluation.registerDatabase("inspector", inspector);
+
   evaluation.registerDatabase("system", system.instance);
   evaluation.registerDatabase("http", new HttpDatabase());
   evaluation.fixpoint();
 
+  global["evaluation"] = evaluation;
+
+  evaluation.errorReporter = (kind, error) => {
+    responder.send(JSON.stringify({type: "error", kind, message: error}));
+  }
+
   client.socket.onopen();
+  // responder.handleEvent(JSON.stringify({type: "findRecordsFromToken", token: ["editor|block|19|token|18"], requestId: 0}));
+  // responder.handleEvent(JSON.stringify({type: "findSource", span: "editor|block|18|node|19", requestId: 0}));
 }

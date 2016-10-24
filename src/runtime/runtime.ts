@@ -2,10 +2,10 @@
 // Runtime
 //---------------------------------------------------------------------
 
-import * as runtimePerformance from "./performance";
+import {PerformanceTracker, NoopPerformanceTracker} from "./performance";
 
-const capturePerformance = true;
-let perf = runtimePerformance.init(capturePerformance);
+const TRACK_PERFORMANCE = true;
+const MAX_ROUNDS = 200;
 
 //---------------------------------------------------------------------
 // Setups
@@ -28,6 +28,7 @@ export class Database {
   blocks: Block[];
   index: TripleIndex;
   evaluations: Evaluation[];
+  nonExecuting: boolean;
 
   constructor() {
     this.id = `db|${Database.id}`;
@@ -76,8 +77,10 @@ export class Evaluation {
   commitQueue: any[];
   multiIndex: MultiIndex;
   databases: Database[];
+  errorReporter: any;
   databaseNames: {[dbId: string]: string};
   nameToDatabase: {[name: string]: Database};
+  perf: PerformanceTracker;
 
   constructor(index?) {
     this.queued = false;
@@ -86,15 +89,28 @@ export class Evaluation {
     this.databaseNames = {};
     this.nameToDatabase = {};
     this.multiIndex = index || new MultiIndex();
+    if(TRACK_PERFORMANCE) {
+      this.perf = new PerformanceTracker();
+    } else {
+      this.perf = new NoopPerformanceTracker();
+    }
+  }
+
+  error(kind: string, error: string) {
+    if(this.errorReporter) {
+      this.errorReporter(kind, error);
+    } else {
+      console.error(kind + ":", error);
+    }
   }
 
   unregisterDatabase(name) {
     let db = this.nameToDatabase[name];
+    delete this.nameToDatabase[name];
     if(!db) return;
 
     this.databases.splice(this.databases.indexOf(db), 1);
     delete this.databaseNames[db.id];
-    delete this.nameToDatabase[name];
     this.multiIndex.unregister(name);
     db.unregister(this);
   }
@@ -123,10 +139,12 @@ export class Evaluation {
   }
 
   blocksFromCommit(commit) {
+    let perf = this.perf;
     let start = perf.time();
     let blocks = [];
     let index = this.multiIndex;
     for(let database of this.databases) {
+      if(database.nonExecuting) continue;
       for(let block of database.blocks) {
         if(block.dormant) continue;
         let checker = block.checker;
@@ -151,6 +169,7 @@ export class Evaluation {
   getAllBlocks() {
     let blocks = [];
     for(let database of this.databases) {
+      if(database.nonExecuting) continue;
       for(let block of database.blocks) {
         if(block.dormant) continue;
         blocks.push(block);
@@ -189,25 +208,29 @@ export class Evaluation {
   }
 
   fixpoint(changes = new Changes(this.multiIndex), blocks = this.getAllBlocks()) {
-    let start = runtimePerformance.time();
+    let perf = this.perf;
+    let start = perf.time();
     let commit;
     changes.changed = true;
-    while(changes.changed && changes.round < 100) {
+    while(changes.changed && changes.round < MAX_ROUNDS) {
       changes.nextRound();
       // console.groupCollapsed("Round" + changes.round);
       for(let block of blocks) {
         let start = perf.time();
         block.execute(this.multiIndex, changes);
-        perf.block(block.name, start);
+        perf.block(block.id, start);
       }
       // console.log(changes);
       commit = changes.commit();
       blocks = this.blocksFromCommit(commit);
       // console.groupEnd();
     }
+    if(changes.round > MAX_ROUNDS) {
+      this.error("Fixpoint Error", "Evaluation failed to fixpoint");
+    }
     perf.fixpoint(start);
-    console.log("TOTAL ROUNDS", changes.round, runtimePerformance.time(start));
-    console.log(changes);
+    // console.log("TOTAL ROUNDS", changes.round, perf.time(start));
+    // console.log(changes);
     for(let database of this.databases) {
       database.onFixpoint(this, changes);
     }

@@ -150,7 +150,6 @@ if(!global["local"]) {
 }
 socket.onmessage = function(msg) {
   let data = JSON.parse(msg.data);
-  console.log(data.type, data);
   if(data.type == "result") {
     let state = {entities: indexes.records.index, dirty: indexes.dirty.index};
     handleDiff(state, data);
@@ -195,8 +194,13 @@ socket.onmessage = function(msg) {
   } else if(data.type == "comments") {
     _ide.injectSpans(data.spans, data.extraInfo);
 
+  } else if(data.type == "findNode") {
+    _ide.attachView(data.recordId, data.spanId);
+
   } else if(data.type == "error") {
     console.error(data.message, data);
+  } else if(_ide.languageService.handleMessage(data)) {
+
   } else {
     console.log("UNKNOWN MESSAGE", data);
   }
@@ -228,6 +232,35 @@ function printDebugRecords(index, dirty) {
 }
 indexes.dirty.subscribe(printDebugRecords);
 
+function subscribeToTagDiff(tag:string, callback: (inserts: string[], removes: string[], records: {[recordId:string]: any}) => void) {
+  indexes.dirty.subscribe((index, dirty) => {
+    let records = {};
+    let inserts = [];
+    let removes = [];
+
+    let dirtyOldRecords = indexes.byTag.dirty[tag] || [];
+    for(let recordId of dirtyOldRecords) {
+      let record = indexes.records.index[recordId];
+      if(!record || !record.tag || record.tag.indexOf(tag) === -1) {
+        removes.push(recordId);
+      }
+    }
+
+    for(let recordId in dirty) {
+      let record = indexes.records.index[recordId];
+      if(record.tag && record.tag.indexOf(tag) !== -1) {
+        inserts.push(recordId);
+        records[recordId] = record;
+      }
+    }
+
+    callback(inserts, removes, records);
+  });
+}
+
+subscribeToTagDiff("editor", (inserts, removes, records) => _ide.updateActions(inserts, removes, records));
+
+subscribeToTagDiff("view", (inserts, removes, records) => _ide.updateViews(inserts, removes, records));
 
 //---------------------------------------------------------
 // Communication helpers
@@ -249,7 +282,7 @@ function recordToEAVs(record) {
         if(typeof v === "object") {
           eavs.push.apply(eavs, recordToEAVs(v));
           eavs.push([e, a, v.id]);
-        } else {
+        } else if(v !== undefined) {
           eavs.push([e, a, v]);
         }
       }
@@ -258,12 +291,18 @@ function recordToEAVs(record) {
       if(typeof v === "object") {
         eavs.push.apply(eavs, recordToEAVs(v));
         eavs.push([e, a, v.id]);
-      } else {
+      } else if(v !== undefined) {
         eavs.push([e, a, v]);
       }
     }
   }
   return eavs;
+}
+
+export function send(message) {
+  if(socket && socket.readyState == 1) {
+    socket.send(JSON.stringify(message))
+  }
 }
 
 export function sendEvent(records:any[]) {
@@ -327,7 +366,7 @@ _ide.onLoadFile = (ide, documentId, code) => {
     socket.send(JSON.stringify({scope: "root", type: "parse", code}))
     socket.send(JSON.stringify({type: "eval", persist: false}));
   }
-  history.replaceState({}, "", `/examples/${documentId}`);
+  history.pushState({}, "", `/examples/${documentId}`);
 }
 
 _ide.onTokenInfo = (ide, tokenId) => {

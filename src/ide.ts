@@ -1,10 +1,13 @@
 import {Renderer, Element as Elem, RenderHandler} from "microReact";
 import {Parser as MDParser} from "commonmark";
 import * as CodeMirror from "codemirror";
-import {debounce, uuid, unpad, Range, Position, isRange, comparePositions, samePosition, whollyEnclosed, adjustToWordBoundary} from "./util";
+import {debounce, uuid, unpad, Range, Position, isRange, compareRanges, comparePositions, samePosition, whollyEnclosed, adjustToWordBoundary} from "./util";
 
 import {Span, SpanMarker, isSpanMarker, isEditorControlled, spanTypes, compareSpans, SpanChange, isSpanChange, HeadingSpan, DocumentCommentSpan} from "./ide/spans";
 import * as Spans from "./ide/spans";
+
+import {activeElements} from "./renderer";
+import {send, sendEvent, indexes} from "./client";
 
 //---------------------------------------------------------
 // Navigator
@@ -124,6 +127,9 @@ class Navigator {
 
     } else if(node) {
       // @NOTE: we intentionally don't handle this case currently since updating here would conflict with the parser updates
+      if(span.isDisabled() !== node.hidden) {
+        node.hidden = span.isDisabled();
+      }
 
     } else if(!node && loc) {
       let cur = loc.from;
@@ -149,7 +155,7 @@ class Navigator {
         parentNode.children.splice(ix, 0, nodeId);
       }
       let doc = this.ide.editor.cm.getDoc();
-      this.nodes[nodeId] = {id: nodeId, name: doc.getLine(loc.from.line), type: "section", level: span.source.level, span, open: true, hidden: false};
+      this.nodes[nodeId] = {id: nodeId, name: doc.getLine(loc.from.line), type: "section", level: span.source.level, span, open: true, hidden: span.isDisabled()};
     }
   }
 
@@ -158,10 +164,6 @@ class Navigator {
     this.open = !this.open;
     this.ide.render();
     event.stopPropagation();
-    // @FIXME: This is kinda hacky, but we'd have to have a full on animation system for better.
-    setTimeout(this.ide.resize, 100);
-    setTimeout(this.ide.resize, 200);
-    setTimeout(this.ide.resize, 300);
   }
 
   navigate = (event, elem:{nodeId:string}) => {
@@ -594,6 +596,7 @@ export class Editor {
     this.cm.on("change", (editor, rawChange) => this.onChange(rawChange));
     this.cm.on("changes", (editor, rawChanges) => this.onChanges(rawChanges));
     this.cm.on("cursorActivity", this.onCursorActivity);
+    this.cm.on("scroll", this.onScroll);
 
     this.newBlockBar = {editor: this, active: false};
   }
@@ -656,6 +659,8 @@ export class Editor {
       this.reloading = true;
       let doc = this.cm.getDoc();
 
+      let cursorLine = doc.getCursor().line;
+
       // Find all runtime-controlled spans (e.g. syntax highlighting, errors) that are unchanged and mark them as such.
       // Unmarked spans will be swept afterwards.
       // Set editor-controlled spans aside. We'll match them up to maintain id stability afterwards
@@ -680,6 +685,9 @@ export class Editor {
           let source = attributes[id] || {};
           source.type = type;
           source.id = id;
+          if(type === "document_comment") {
+            source.delay = 1000;
+          }
 
           let spans = this.findSpansAt(from, type);
           let unchanged = false;
@@ -688,6 +696,9 @@ export class Editor {
             if(loc && samePosition(to, loc.to) && span.sourceEquals(source)) {
               span.source = source;
               if(span.refresh) span.refresh();
+              if(type === "document_comment") {
+                (span as any).updateWidget();
+              }
               touchedIds[span.id] = true;
               unchanged = true;
               break;
@@ -779,7 +790,6 @@ export class Editor {
       }
     });
 
-    console.log("injected!");
     this.reloading = false;
   }
 
@@ -866,9 +876,31 @@ export class Editor {
     if(!this.reloading && this.denormalizedSpans.length === 0) this.ide.queueUpdate();
   }, 0);
 
+  jumpTo(id:string) {
+    for(let span of this.getAllSpans()) {
+      if(span.source.id === id) {
+        let loc = span.find();
+        if(!loc) break;
+        this.cm.scrollIntoView(loc, 20);
+        break;
+      }
+    }
+  }
+
+  scrollToPosition(position:Position) {
+    let top = this.cm.heightAtLine(position.line, "local");
+    this.cm.scrollTo(0, Math.max(top - 30, 0));
+  }
+
   //-------------------------------------------------------
   // Spans
   //-------------------------------------------------------
+
+  getSpanBySourceId(id:string):Span|undefined {
+    for(let span of this.getAllSpans()) {
+      if(span.source.id === id) return span;
+    }
+  }
 
   getAllSpans(type?:string):Span[] {
     let doc = this.cm.getDoc();
@@ -913,6 +945,83 @@ export class Editor {
     return span;
   }
 
+  /** Create new Spans wrapping the text between each given span id or range. */
+  markBetween(idsOrRanges:(string[]|Range[]), source:any, bounds?:Range): Span[] {
+    return this.cm.operation(() => {
+      if(!idsOrRanges.length) return [];
+      let ranges:Range[];
+
+      if(typeof idsOrRanges[0] === "string") {
+        let ids:string[] = idsOrRanges as string[];
+        ranges = [];
+        let spans:Span[];
+        if(bounds) {
+          spans = this.findSpansAt(bounds.from).concat(this.findSpans(bounds.from, bounds.to));
+        } else {
+          spans = this.getAllSpans();
+        }
+        for(let span of spans) {
+          if(ids.indexOf(span.source.id) !== -1) {
+            let loc = span.find();
+            if(!loc) continue;
+            if(span.isLine()) {
+              loc = {from: loc.from, to: {line: loc.from.line + 1, ch: 0}};
+            }
+            ranges.push(loc);
+          }
+        }
+      } else {
+        ranges = idsOrRanges as Range[];
+      }
+
+      if(!ranges.length) return;
+
+      let doc = this.cm.getDoc();
+      ranges.sort(compareRanges);
+
+      let createdSpans:Span[] = [];
+
+      let start = bounds && bounds.from || {line: 0, ch: 0};
+      for(let range of ranges) {
+        let from = doc.posFromIndex(doc.indexFromPos(range.from) - 1);
+        if(comparePositions(start, from) < 0) {
+          createdSpans.push(this.markSpan(start, {line: from.line,  ch: 0}, source));
+        }
+
+        start = doc.posFromIndex(doc.indexFromPos(range.to) + 1);
+      }
+
+      let last = ranges[ranges.length - 1];
+      let to = doc.posFromIndex(doc.indexFromPos(last.to) + 1);
+      let end = bounds && bounds.to || doc.posFromIndex(doc.getValue().length);
+      if(comparePositions(to, end) < 0) {
+        createdSpans.push(this.markSpan(to, end, source));
+      }
+
+      for(let range of ranges) {
+        for(let span of this.findSpans(range.from, range.to)) {
+          span.enable();
+          if(span.refresh) span.refresh();
+
+        }
+      }
+      this.queueUpdate();
+      return createdSpans;
+    });
+  }
+
+  clearSpans(type: string, bounds?:Range) {
+    this.cm.operation(() => {
+      let spans:Span[];
+      if(bounds) spans = this.findSpans(bounds.from, bounds.to, type);
+      else spans = this.getAllSpans(type);
+
+      for(let span of spans) {
+        span.clear();
+      }
+    });
+  }
+
   findHeadingAt(pos:Position):HeadingSpan|undefined {
     let from = {line: 0, ch: 0};
     let headings = this.findSpans(from, pos, "heading") as HeadingSpan[];
@@ -927,7 +1036,7 @@ export class Editor {
   // Formatting
   //-------------------------------------------------------
 
-  protected inCodeBlock(pos:Position) {
+  inCodeBlock(pos:Position) {
     let inCodeBlock = false;
     for(let span of this.getAllSpans("code_block")) {
       let loc = span.find();
@@ -1004,6 +1113,7 @@ export class Editor {
     }
 
     if(refocus) this.cm.focus();
+    this.newBlockBar.active = false;
 
     this.queueUpdate();
   }
@@ -1023,8 +1133,7 @@ export class Editor {
 
         // No editor-controlled span may be created within a codeblock.
         // @NOTE: This feels like a minor layor violation.
-        // @FIXME: This doesn't properly handle the unlikely "inline wholly contains codeblock" case
-        if(this.inCodeBlock(from) || this.inCodeBlock(to)) return;
+        if(from.line !== to.line && this.findSpans(from, to, "code_block").length || this.findSpansAt(from, "code_block").length) return;
 
         this.formatSpan(from, to, source)
 
@@ -1060,8 +1169,7 @@ export class Editor {
 
       // No editor-controlled span may be created within a codeblock.
       // @NOTE: This feels like a minor layor violation.
-      // @FIXME: This doesn't properly handle the unlikely "line wholly contains codeblock" case
-      if(this.inCodeBlock(from) || this.inCodeBlock(to)) return;
+      if(from.line !== to.line && this.findSpans(from, to, "code_block").length || this.findSpansAt(from, "code_block").length) return;
 
       let existing:Span[] = [];
       let formatted = false;
@@ -1387,8 +1495,10 @@ export class Editor {
   }
 
   onChanges = (raws:CodeMirror.EditorChangeLinkedList[]) => {
-    for(let span of this.changingSpans) {
-      if(span.refresh) span.refresh();
+    if(this.changingSpans) {
+      for(let span of this.changingSpans) {
+        if(span.refresh) span.refresh();
+      }
     }
     this.changingSpans = undefined;
     this.changing = false;
@@ -1444,31 +1554,61 @@ export class Editor {
       }
     }
 
+    this.updateFormatters();
+  }
+
+  onScroll = () => {
+    this.updateFormatters();
+  }
+
+  updateFormatters = debounce(() => {
+    let doc = this.cm.getDoc();
+    let cursor = doc.getCursor();
+
     // If we're outside of a codeblock, display our rich text controls.
     let codeBlocks = this.findSpansAt(cursor, "code_block");
-
 
     //If the cursor is at the beginning of a new line, display the new block button.
     let old = this.showNewBlockBar;
     this.showNewBlockBar = (!codeBlocks.length &&
-                               cursor.ch === 0 &&
-                               doc.getLine(cursor.line) === "");
+                            cursor.ch === 0 &&
+                            doc.getLine(cursor.line) === "");
 
-    if(this.showNewBlockBar !== old || this.showNewBlockBar) {
+    if(this.showNewBlockBar !== old) {
       this.newBlockBar.active = false;
+      this.queueUpdate();
+    } if(this.showNewBlockBar) {
       this.queueUpdate();
     }
 
     // Otherwise if there's a selection, show the format bar.
+    let inputState = this.ide.inputState;
+    let modifyingSelection = inputState.mouse["1"] || inputState.keyboard.shift;
+    codeBlocks = this.findSpans(doc.getCursor("from"), doc.getCursor("to"), "code_block");
+
     old = this.showFormatBar;
-    this.showFormatBar = (!codeBlocks.length && doc.somethingSelected());
+    this.showFormatBar = (!modifyingSelection && !codeBlocks.length && doc.somethingSelected());
     if(this.showFormatBar !== old || this.showFormatBar) this.queueUpdate();
-  }
+  }, 30);
 
   // Elements
 
+  // @NOTE: Does this belong in the IDE?
+  controls() {
+    let inspectorButton:Elem = {text: "inspect", click: () => this.ide.toggleInspecting()};
+    if(this.ide.inspectingClick) inspectorButton.text = "click to inspect";
+    else if(this.ide.inspecting) inspectorButton.text = "stop inspecting";
+
+    return {c: "flex-row controls", children: [
+      {text: "restart", click: () => this.ide.eval(false)},
+      {text: "run", click: () => this.ide.eval(true)},
+      inspectorButton
+    ]};
+  }
+
   render() {
     return {c: "editor-pane",  postRender: this.injectCodeMirror, children: [
+      this.controls(),
       this.showNewBlockBar ? newBlockBar(this.newBlockBar) : undefined,
       this.showFormatBar ? formatBar({editor: this}) : undefined
     ]};
@@ -1559,72 +1699,6 @@ class Comments {
 
     this.ordered = Object.keys(this.comments);
     this.ordered.sort((a, b) => compareSpans(this.comments[a], this.comments[b]));
-    this.resizeComments();
-  }
-
-  resizeComments = debounce(() => {
-    if(!this.rootNode) return;
-
-    let inner:HTMLElement = this.rootNode.children[0] as any;
-    let nodes:HTMLElement[] = inner.children as any;
-    let cm = this.ide.editor.cm;
-
-    let ix = 0;
-    let intervals:ClientRect[] = [];
-    for(let commentId of this.ordered) {
-      let comment = this.comments[commentId];
-      let loc = comment.find();
-      if(!loc) continue;
-      let coords = cm.charCoords(loc.from, "local");
-
-      let node = nodes[ix];
-      node.style.top = ""+coords.top;
-      intervals[ix] = node.getBoundingClientRect();
-      ix++;
-    }
-
-    // Adjust pairs of comments until they no longer intersect.
-    for(let ix = 0, length = intervals.length - 1; ix < length; ix++) {
-      let prev:ClientRect|undefined = intervals[ix - 1];
-      let cur = intervals[ix];
-      let next = intervals[ix + 1];
-
-      if(next.top > cur.bottom) {
-        continue;
-      }
-
-      let curNode = nodes[ix];
-      let nextNode = nodes[ix + 1];
-
-      // Scoot the current comment up as much as possible without:
-      // - Pushing the comment off the top of the screen
-      // - Pushing it entirely off it's line
-      // - Going any further than required to fit both comments
-      // - Intersecting with the comment preceding it
-
-      let intersect = cur.bottom - next.top;
-      let oldTop = cur.top;
-      let neueTop = Math.max(0, cur.top - cur.height, cur.top - intersect, prev && prev.bottom || 0);
-      intersect -= cur.top - neueTop;
-      curNode.style.top = ""+neueTop;
-      cur = intervals[ix] = curNode.getBoundingClientRect();
-
-      if(intersect == 0) continue;
-
-      // When all else fails, we push the next comment down the remainder of the intersection
-      nextNode.style.top = ""+(next.top + intersect);
-      next = intervals[ix + 1] = nextNode.getBoundingClientRect();
-    }
-  }, 16, true);
-
-  wangjangle:RenderHandler = (node, elem) => {
-    if(!node["_injected"]) {
-      let wrapper = this.ide.editor.cm.getWrapperElement();
-      wrapper.querySelector(".CodeMirror-sizer").appendChild(node);
-      node["_injected"] = true;
-    }
-    this.rootNode = node;
-    this.resizeComments();
   }
 
   highlight = (event:MouseEvent, {commentId}) => {
@@ -1663,13 +1737,23 @@ class Comments {
     this.ide.render();
   }
 
+  inject = (node:HTMLElement, elem:Elem) => {
+    let {commentId} = elem;
+    let comment = this.comments[commentId];
+
+    if(comment.commentElem) {
+      comment.commentElem.appendChild(node);
+    }
+  }
+
   comment(commentId:string):Elem {
     let comment = this.comments[commentId];
     if(!comment) return;
     let actions:Elem[] = [];
 
     return {
-      c: `comment ${comment.kind}`, commentId,
+      c: `comment ${comment.kind}`, commentId, dirty: true,
+      postRender: this.inject,
       mouseover: this.highlight, mouseleave: this.unhighlight, click: this.goTo,
       children: [
         {c: "comment-inner", children: [
@@ -1684,7 +1768,7 @@ class Comments {
     for(let commentId of this.ordered) {
       children.push(this.comment(commentId));
     }
-    return {c: "comments-pane collapsed collapsed-is-hardcoded", postRender: this.wangjangle, children: [{c: "comments-pane-inner", children}]};
+    return {c: "comments-pane", children};
   }
 }
 
@@ -1731,8 +1815,8 @@ function newBlockBar(elem:EditorBarElem):Elem {
   let doc = editor.cm.getDoc();
   let cursor = doc.getCursor();
   let top = editor.cm.cursorCoords(cursor, undefined).top;
-  let left = editor.cm.cursorCoords(cursor, "local").left;
-  console.log(cursor.line, cursor.ch, top, left);
+  let left = 0;
+
   return {id: "new-block-bar", c: `new-block-bar ${active ? "active" : ""}`, top, left, children: [
     {c: "new-block-bar-toggle ion-plus", click: () => {
       elem.active = !elem.active;
@@ -1769,46 +1853,36 @@ function modalWrapper():Elem {
 // Root
 //---------------------------------------------------------
 
-var fakeComments:CommentMap = {
-  bar: {loc: {from: {line: 24, ch: 15}, to: {line: 24, ch: 26}}, type: "error", title: "Invalid tag location", actions: ["fix it"], description: unpad(`
-        '#department' tells me to search for a record tagged "department", but since it's not in a record, I don't know the full pattern to look for.
-
-        If you wrap it in square brackets, that tells me you're looking for a record with just that tag.`)},
-
-  catbug: {loc: {from: {line: 25, ch: 13}, to: {line: 25, ch: 52}}, type: "warning", title: "Unmatched pattern", actions: ["create it", "fake it", "dismiss"], description: unpad(`
-           No records currently in the database match this pattern, and no blocks are capable of providing one.
-
-           I can create a new block for you to produce records shaped like this; or add some fake records that match that pattern for testing purposes.`)},
-  dankeykang: {loc: {from: {line: 37, ch: 17}, to: {line: 37, ch: 21}}, type: "error", title: "Unbound variable", description: unpad(`
-               The variable 'nqme' was not bound in this block. Did you mean 'name'?
-               `)},
-};
-
 export class IDE {
   protected _fileCache:{[fileId:string]: string} = {};
 
   /** The id of the active document. */
   documentId?:string;
   /** Whether the active document has been loaded. */
-  loaded:boolean = false;
+  loaded = false;
   /** The current editor generation. Used for imposing a relative ordering on parses. */
   generation = 0;
 
+  /** Whether the inspector is currently active. */
+  inspecting = false;
+
+  /** Whether the next click should be an inspector click automatically (as opposed to requiring Cmd or Ctrl modifiers. */
+  inspectingClick = false;
+
   renderer:Renderer = new Renderer();
 
+  languageService:LanguageService = new LanguageService();
   navigator:Navigator = new Navigator(this);
   editor:Editor = new Editor(this);
   comments:Comments = new Comments(this);
 
   constructor( ) {
-    window.addEventListener("resize", this.resize);
     document.body.appendChild(this.renderer.content);
     this.renderer.content.classList.add("ide-root");
-  }
 
-  resize = debounce(() => {
-    this.comments.resizeComments();
-  }, 16, true);
+    this.enableInspector();
+    this.monitorInputState();
+  }
 
   elem() {
     return {c: `editor-root`, children: [
@@ -1857,10 +1931,14 @@ export class IDE {
       this.loaded = true;
     }
 
-    let name = this.documentId; // @FIXME
-    this.navigator.loadDocument(this.documentId, name);
-    this.navigator.currentId = this.documentId;
-    this.comments.update();
+    if(this.documentId) {
+      let name = this.documentId; // @FIXME
+      this.navigator.loadDocument(this.documentId, name);
+      this.navigator.currentId = this.documentId;
+      this.comments.update();
+    } else {
+      // Empty file
+    }
 
     this.render();
   }
@@ -1884,8 +1962,596 @@ export class IDE {
     }
   }
 
+  monitorInputState() {
+    window.addEventListener("mousedown", this.updateMouseInputState);
+    window.addEventListener("mouseup", this.updateMouseInputState);
+    window.addEventListener("keydown", this.updateKeyboardInputState);
+    window.addEventListener("keyup", this.updateKeyboardInputState);
+  }
+
+  inputState = {
+    mouse: {1: false},
+    keyboard: {shift: false}
+  }
+  updateMouseInputState = (event:MouseEvent) => {
+    let mouse = this.inputState.mouse;
+    let neue = !!(event.buttons & 1);
+    if(!neue && mouse["1"]) this.editor.updateFormatters();
+    mouse["1"] = neue;
+  }
+  updateKeyboardInputState = (event:KeyboardEvent) => {
+    let keyboard = this.inputState.keyboard;
+    let neue = event.shiftKey;
+    if(!neue && keyboard.shift) this.editor.updateFormatters();
+    keyboard.shift = neue;
+  }
+
+  //-------------------------------------------------------
+  // Actions
+  //-------------------------------------------------------
+
+  activeActions:{[recordId:string]: any} = {};
+
+  actions = {
+    insert: {
+      "mark-between": (exec) => {
+        let source = {type: exec.type[0]};
+        for(let attribute in exec) {
+          if(exec[attribute] === undefined) continue;
+          source[attribute] = exec[attribute].length === 1 ? exec[attribute][0] : exec[attribute];
+        }
+        exec.spans = this.editor.markBetween(exec.token, source, exec.bounds);
+      },
+
+      "mark-span": (exec) => {
+        exec.spans = [];
+
+        let ranges:Range[] = [];
+        if(exec.token) {
+          for(let token of exec.token) {
+            let span = this.editor.getSpanBySourceId(token);
+            let range = span && span.find();
+            if(range) ranges.push(range);
+          }
+        }
+
+        let source = {type: exec.type[0]};
+        for(let attribute in exec) {
+          if(exec[attribute] === undefined) continue;
+          source[attribute] = exec[attribute].length === 1 ? exec[attribute][0] : exec[attribute];
+        }
+
+        for(let range of ranges) {
+          exec.spans.push(this.editor.markSpan(range.from, range.to, source));
+        }
+      },
+
+      "mark-range": (action) => {
+        let source = {type: action.type[0]};
+        for(let attribute in action) {
+          let value = action[attribute];
+          if(value === undefined) continue;
+          source[attribute] = value.length === 1 ? value[0] : value;
+        }
+
+        let doc = this.editor.cm.getDoc();
+        let start = doc.posFromIndex(action.start[0]);
+        let stop = doc.posFromIndex(action.stop[0]);
+        action.span = this.editor.markSpan(start, stop, source);
+      },
+
+      "jump-to": (action) => {
+        if(!action.token || action.token.length === 0) return;
+        let from:Position;
+
+        for(let spanId of action.token) {
+          let span = this.editor.getSpanBySourceId(spanId);
+          if(!span) continue;
+          let loc = span.find();
+          if(!loc) continue;
+          if(!from || comparePositions(loc.from, from) < 0) from = loc.from;
+        }
+
+        this.editor.scrollToPosition(from);
+      },
+
+      "jump-to-position": (action) => {
+        if(!action.position || action.position.length === 0) return;
+
+        let doc = this.editor.cm.getDoc();
+        let min = Infinity;
+        let max = -Infinity;
+        for(let index of action.position) {
+          if(index < min) min = index;
+          if(index > max) max = index;
+        }
+        let from = doc.posFromIndex(min)
+        this.editor.scrollToPosition(from);
+      },
+
+      "find-source": (action, actionId) => {
+        let record = action.record && action.record[0];
+        let attribute = action.attribute && action.attribute[0];
+        let span = action.span && action.span[0];
+        this.languageService.findSource({record, attribute, span}, this.languageService.unpackSource((records) => {
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          sendEvent(records);
+        }));
+      },
+
+      "find-related": (action, actionId) => {
+        this.languageService.findRelated({span: action.span, variable: action.variable}, this.languageService.unpackRelated((records) => {
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          sendEvent(records);
+        }));
+      },
+
+      "find-value": (action, actionId) => {
+        let given;
+        if(action.given) {
+          given = {};
+          for(let avId of action.given) {
+            let av = indexes.records.index[avId];
+            given[av.attribute] = av.value;
+          }
+        }
+
+        this.languageService.findValue({variable: action.variable, given}, this.languageService.unpackValue((records) => {
+          let doc = this.editor.cm.getDoc();
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          sendEvent(records);
+        }));
+      },
+
+      "find-cardinality": (action, actionId) => {
+        this.languageService.findCardinality({variable: action.variable}, this.languageService.unpackCardinality((records) => {
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          sendEvent(records);
+        }));
+      },
+
+      "find-affector": (action, actionId) => {
+        this.languageService.findAffector(
+          {
+            record: action.record && action.record[0],
+            attribute: action.attribute && action.attribute[0],
+            span: action.span && action.span[0]
+          },
+          this.languageService.unpackAffector((records) => {
+            for(let record of records) {
+              record.tag.push("editor");
+              record["action"] = actionId;
+            }
+            console.log("AFFECTOR", records);
+            sendEvent(records);
+          }));
+      },
+
+      "find-failure": (action, actionId) => {
+        this.languageService.findFailure({block: action.block}, this.languageService.unpackFailure((records) => {
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          console.log("FAILURE", records);
+          sendEvent(records);
+        }));
+      },
+
+      "find-root-drawers": (action, actionId) => {
+        this.languageService.findRootDrawer(null, this.languageService.unpackRootDrawer((records) => {
+          for(let record of records) {
+            record.tag.push("editor");
+            record["action"] = actionId;
+          }
+          console.log("ROOT DRAWER", records);
+          sendEvent(records);
+        }));
+      },
+
+      "inspector": (action, actionId) => {
+        this.inspecting = true;
+        let inspectorElem:HTMLElement = activeElements[actionId] as any;
+        if(action["in-editor"]) this.editor.cm.getWrapperElement().appendChild(inspectorElem);
+
+        if(action.x && action.y) {
+          inspectorElem.style.position = "absolute";
+          inspectorElem.style.left = action.x[0];
+          inspectorElem.style.top = action.y[0];
+        }
+        this.queueUpdate();
+      }
+    },
+
+    remove: {
+      "mark-between": (exec) => {
+        if(!exec.spans) return;
+        for(let span of exec.spans) {
+          span.clear();
+        }
+      },
+
+      "mark-span": (exec) => {
+        if(!exec.spans) return;
+        for(let span of exec.spans) {
+          span.clear();
+        }
+      },
+
+      "mark-range": (action) => {
+        if(!action.span) return;
+        action.span.clear();
+      },
+
+      "inspector": (action, actionId) => {
+        this.inspecting = false;
+        this.queueUpdate();
+      }
+    },
+  };
+
+  updateActions(inserts: string[], removes: string[], records) {
+    this.editor.cm.operation(() => {
+      for(let recordId of removes) {
+        let action = this.activeActions[recordId];
+        if(!action) return;
+        let run = this.actions.remove[action.tag];
+        console.log("STOP", action.tag, recordId, action, !!run);
+        if(run) run(action);
+        delete this.activeActions[recordId];
+      }
+
+      for(let recordId of inserts) {
+        let record = records[recordId];
+        let bounds:Range|undefined;
+        if(record.within) {
+          let span = this.editor.getSpanBySourceId(record.within[0]);
+          if(span) bounds = span.find();
+        }
+
+        let action:any = {bounds};
+        for(let tag of record.tag) {
+          if(tag in this.actions.insert || tag in this.actions.remove) {
+            action.tag = tag;
+            break;
+          }
+        }
+        if(!action.tag) continue;
+
+        for(let attr in record) {
+          if(!action[attr]) action[attr] = record[attr];
+        }
+        this.activeActions[recordId] = action;
+
+        let run = this.actions.insert[action.tag];
+        console.log("START", action.tag, recordId, action, !!run);
+        if(!run) console.warn(`Unable to run unknown action type '${action.tag}'`, recordId, record);
+        else run(action, recordId);
+      }
+    });
+  }
+
+  //-------------------------------------------------------
+  // Views
+  //-------------------------------------------------------
+  activeViews:any = {};
+
+  updateViews(inserts: string[], removes: string[], records) {
+    for(let recordId of removes) {
+      let view = this.activeViews[recordId];
+      if(!view) continue;
+      // Detach view
+      if(view.widget) view.widget.clear();
+      view.widget = undefined;
+    }
+
+    for(let recordId of inserts) {
+      // if the view already has a parent, leave it be.
+      if(indexes.byChild.index[recordId]) continue;
+
+      // If the view is already active, he doesn't need inserted again.
+      if(this.activeViews[recordId] && this.activeViews[recordId].widget) continue;
+
+      // Otherwise, we'll grab it and attach it to its creator in the editor.
+      let record = records[recordId];
+      let view = this.activeViews[recordId] = this.activeViews[recordId] || {record: recordId, container: document.createElement("div")};
+      view.container.className = "view-container";
+
+      //this.attachView(recordId, record.node)
+      // Find the source node for this view.
+      if(record.span) {
+        this.attachView(recordId, record.span[0]);
+      } else if(record.node) {
+        send({type: "findNode", recordId, node: record.node[0]});
+      } else {
+        console.warn("Unable to parent view that doesn't provide its origin node  or span id", record);
+      }
+
+    }
+  }
+
+  attachView(recordId:string, spanId:string) {
+    let view = this.activeViews[recordId];
+
+    // @NOTE: This isn't particularly kosher.
+    let node = activeElements[recordId];
+    if(!node) return;
+    if(node !== view.container.firstChild) {
+      view.container.appendChild(node);
+    }
+
+    let sourceSpan:Span|undefined = view.span;
+    if(spanId !== undefined) {
+      sourceSpan = this.editor.getSpanBySourceId(spanId);
+    }
+
+    if(!sourceSpan) return;
+    view.span = sourceSpan;
+
+    let loc = sourceSpan.find();
+    if(!loc) return;
+    let line = loc.to.line;
+    if(sourceSpan.isBlock()) line -= 1;
+
+    if(view.widget && line === view.line) return;
+
+    if(view.widget) {
+      view.widget.clear();
+    }
+
+    view.line = line;
+    view.widget = this.editor.cm.addLineWidget(line, view.container);
+  }
+
+  //-------------------------------------------------------
+  // Inspector
+  //-------------------------------------------------------
+
+  findPaneAt(x: number, y: number):"editor"|"application"|undefined {
+    let editorContainer = this.editor.cm.getWrapperElement();
+    let editor = editorContainer && editorContainer.getBoundingClientRect();
+    let appContainer = document.querySelector(".application-container")
+    let app = appContainer && appContainer.getBoundingClientRect(); // @FIXME: Not particularly durable
+    if(editor && x >= editor.left && x <= editor.right &&
+       y >= editor.top && y <= editor.bottom) {
+      return "editor";
+    } else if(app && x >= app.left && x <= app.right &&
+              y >= app.top && y <= app.bottom) {
+      return "application";
+    }
+  }
+
+  enableInspector() {
+    //window.addEventListener("mouseover", this.updateInspector);
+    window.addEventListener("click", this.updateInspector, true);
+  }
+
+  disableInspector() {
+    //window.removeEventListener("mouseover", this.updateInspector);
+    window.removeEventListener("click", this.updateInspector, true);
+  }
+
+  toggleInspecting() {
+    if(this.inspecting) {
+      sendEvent([{tag: ["inspector", "clear"]}]);
+    } else {
+      this.inspectingClick = true;
+    }
+    this.queueUpdate();
+  }
+
+  updateInspector = (event:MouseEvent) => {
+    let pane = this.findPaneAt(event.pageX, event.pageY);
+    if(!(event.ctrlKey || event.metaKey || this.inspectingClick)) return;
+    this.inspectingClick = false;
+    let events = [];
+    if(pane === "editor") {
+      let pos = this.editor.cm.coordsChar({left: event.pageX, top: event.pageY});
+      let spans = this.editor.findSpansAt(pos).sort(compareSpans);
+
+      let editorContainer = this.editor.cm.getWrapperElement();
+      let bounds = editorContainer.getBoundingClientRect();
+      let x = event.clientX - bounds.left;
+      let y = event.clientY - bounds.top;
+
+      while(spans.length) {
+        let span = spans.shift();
+        if(!span.isEditorControlled() || span.type === "code_block") {
+          events.push({tag: ["inspector", "inspect", spans.length === 0 ? "direct-target" : undefined], target: span.source.id, type: span.source.type, x, y});
+        }
+      }
+
+    } else if(pane === "application") {
+      let appContainer = document.querySelector(".application-root > .application-container > .program") as HTMLElement;
+      let x = event.clientX - appContainer.offsetLeft;
+      let y = event.clientY - appContainer.offsetTop;
+      let current:any = event.target;
+      while(current && current.entity) {
+        events.push({tag: ["inspector", "inspect", current === event.target ? "direct-target" : undefined], target: current.entity, type: "element", x, y});
+        current = current.parentNode;
+      }
+
+      // If we didn't click on an element, inspect the root.
+      if(events.length === 0) {
+        events.push({tag: ["inspector", "inspect", "direct-target"], type: "root", x, y});
+      }
+    }
+
+    this.queueUpdate();
+    if(events.length) {
+      sendEvent(events);
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
   onChange?:(self:IDE) => void
   onEval?:(self:IDE, persist?: boolean) => void
   onLoadFile?:(self:IDE, documentId:string, code:string) => void
   onTokenInfo?:(self:IDE, tokenId:string) => void
+}
+
+type FindSourceArgs = {record?: string, attribute?: string, span?:string|string[], source?: {block?: string[], span?: string[]}[]};
+type SourceRecord = {tag: string[], record?: string, attribute?: string, span: string[], block: string[]};
+type FindRelatedArgs = {span?: string[], variable?: string[]};
+type RelatedRecord = {tag: string[], span: string, variable: string[]};
+type FindValueArgs = {variable: string[], given: {[attribute: string]: any}, rows?: any[][], totalRows?: number, variableMappings?: {[span: string]: number}, variableNames?: {[span: string]: string}};
+type ValueRecord = {tag: string[], variable: string, value: any, row: number, name: string, register: number}
+type FindCardinalityArgs = {variable: string[], cardinality?: {[variable: string]: number}};
+type CardinalityRecord = {tag: string[], variable: string, cardinality: number};
+type FindAffectorArgs = {record?: string, attribute?: string, span?: string, affector?: {block?: string[], action: string[]}[]};
+type AffectorRecord = {tag: string[], record?: string, attribute?: string, span?: string, block: string[], action: string[]};
+type FindFailureArgs = {block: string[], span?: {block: string, start: number, stop: number}[]};
+type FailureRecord = {tag: string[], block: string, start: number, stop: number};
+type FindRootDrawerArgs = {drawers?: {id: string, start: number, stop: number}[]};
+type RootDrawerRecord = {tag: string[], span: string, start: number, stop: number};
+
+class LanguageService {
+  protected static _requestId = 0;
+
+  protected _listeners:{[requestId:number]: (args:any) => void} = {};
+
+  findSource(args:FindSourceArgs, callback:(args:FindSourceArgs) => void) {
+    this.send("findSource", args, callback);
+  }
+
+  unpackSource(callback:(args:SourceRecord[]) => void) {
+    return (message:FindSourceArgs) => {
+      let records:SourceRecord[] = [];
+      for(let source of message.source) {
+        let span:any = message.span || source.span;
+        records.push({tag: ["source"], record: message.record, attribute: message.attribute, span, block: source.block});
+      }
+      callback(records);
+    };
+  }
+
+  findRelated(args:FindRelatedArgs, callback:(args:FindRelatedArgs) => void) {
+    this.send("findRelated", args, callback);
+  }
+
+  unpackRelated(callback:(args:RelatedRecord[]) => void) {
+    return (message:FindRelatedArgs) => {
+      let records:RelatedRecord[] = [];
+      // This isn't really correct, but we're rolling with it for now.
+      for(let span of message.span) {
+        records.push({tag: ["related"], span, variable: message.variable});
+      }
+      callback(records);
+    };
+  }
+
+  findValue(args:FindValueArgs, callback:(args:FindValueArgs) => void) {
+    this.send("findValue", args, callback);
+  }
+
+  unpackValue(callback:(args:ValueRecord[]) => void) {
+    return (message:FindValueArgs) => {
+      if(message.totalRows > message.rows.length) {
+        // @TODO: Turn this into a fact.
+        console.warn(`Too many possible values, showing {{message.rows.length}} of {{message.totalRows}}`);
+      }
+      let mappings = message.variableMappings;
+      let names = message.variableNames;
+      let records:ValueRecord[] = [];
+      for(let rowIx = 0, rowCount = message.rows.length; rowIx < rowCount; rowIx++) {
+        let row = message.rows[rowIx];
+        for(let variable in mappings) {
+          let register = mappings[variable];
+          records.push({tag: ["value"], row: rowIx + 1, variable, value: row[register], register, name: names[variable]});
+        }
+      }
+      callback(records);
+    };
+  }
+
+  findCardinality(args:FindCardinalityArgs, callback:(args:FindCardinalityArgs) => void) {
+    this.send("findCardinality", args, callback);
+  }
+
+  unpackCardinality(callback:(args:CardinalityRecord[]) => void) {
+    return (message:FindCardinalityArgs) => {
+      let records:CardinalityRecord[] = [];
+      for(let variable in message.cardinality) {
+        records.push({tag: ["cardinality"], variable, cardinality: message.cardinality[variable]});
+      }
+      callback(records);
+    };
+  }
+
+  findAffector(args:FindAffectorArgs, callback:(args:FindAffectorArgs) => void) {
+    this.send("findAffector", args, callback);
+  }
+
+  unpackAffector(callback:(args:AffectorRecord[]) => void) {
+    return (message:FindAffectorArgs) => {
+      let records:AffectorRecord[] = [];
+      for(let affector of message.affector) {
+        records.push({tag: ["affector"], record: message.record, attribute: message.attribute, span: message.span, block: affector.block, action: affector.action});
+      }
+      callback(records);
+    };
+  }
+
+  findFailure(args:FindFailureArgs, callback:(args:FindFailureArgs) => void) {
+    this.send("findFailure", args, callback);
+  }
+
+  unpackFailure(callback:(args:FailureRecord[]) => void) {
+    return (message:FindFailureArgs) => {
+      let records:FailureRecord[] = [];
+      for(let failure of message.span) {
+        records.push({tag: ["failure"], block: failure.block, start: failure.start, stop: failure.stop});
+      }
+      callback(records);
+    };
+  }
+
+  findRootDrawer(args:any, callback:(args:FindRootDrawerArgs) => void) {
+    this.send("findRootDrawers", args || {}, callback);
+  }
+
+  unpackRootDrawer(callback:(args:RootDrawerRecord[]) => void) {
+    return (message:FindRootDrawerArgs) => {
+      let records:RootDrawerRecord[] = [];
+      for(let drawer of message.drawers) {
+        records.push({tag: ["root-drawer"], span: drawer.id, start: drawer.start, stop: drawer.stop});
+      }
+      callback(records);
+    };
+  }
+
+  send(type:string, args:any, callback:any) {
+    let id = LanguageService._requestId++;
+    args.requestId = id;
+    this._listeners[id] = callback;
+    args.type = type;
+    console.log("SENT", args);
+    send(args);
+  }
+
+  handleMessage = (message) => {
+    let type = message.type;
+    if(type === "findSource" || type === "findRelated" || type === "findValue" || type === "findCardinality" || type === "findAffector" || type === "findFailure" || type === "findRootDrawers") {
+      let id = message.requestId;
+      let listener = this._listeners[id];
+      if(listener) {
+        listener(message);
+        return true;
+      }
+    }
+    return false;
+  }
 }

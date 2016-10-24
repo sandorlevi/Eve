@@ -1,6 +1,6 @@
 import * as CodeMirror from "codemirror";
 import {Editor, Change, ChangeCancellable} from "../ide";
-import {Range, Position, isRange, comparePositions, samePosition, whollyEnclosed} from "../util";
+import {Range, Position, isRange, comparePositions, samePosition, whollyEnclosed, debounce} from "../util";
 
 type FormatAction = "add"|"remove"|"split"
 
@@ -95,7 +95,10 @@ export function compareSpans(a, b) {
   if(!aLoc && !bLoc) return 0;
   if(!aLoc) return -1;
   if(!bLoc) return 1;
-  if(aLoc.from.line === bLoc.from.line) return 0;
+  if(aLoc.from.line === bLoc.from.line) {
+    if(aLoc.from.ch === bLoc.from.ch) return 0;
+    return aLoc.from.ch < bLoc.from.ch ? -1 : 1;
+  }
   return aLoc.from.line < bLoc.from.line ? -1 : 1;
 }
 
@@ -107,6 +110,7 @@ export class Span {
   protected static _spanStyle:"inline"|"line"|"block";
   protected _spanStyle:"inline"|"line"|"block";
 
+  protected disabled = false;
 
   id: string;
   editor: Editor;
@@ -114,7 +118,7 @@ export class Span {
 
   type: string;
 
-  protected _attributes:CodeMirror.TextMarkerOptions = {};
+  protected _attributes:CodeMirror.TextMarkerOptions&{widget?: HTMLElement} = {};
 
   constructor(editor:Editor, from:Position, to:Position, public source:SpanSource, origin = "+input") {
     this.editor = editor;
@@ -138,7 +142,7 @@ export class Span {
     this._attributes.className = this._attributes.className || this.type;
     let doc = this.editor.cm.getDoc();
     if(samePosition(from, to)) {
-      this.marker = doc.setBookmark(from, to);
+      this.marker = doc.setBookmark(from, this._attributes);
     } else {
       this.marker = doc.markText(from, to, this._attributes);
     }
@@ -181,6 +185,23 @@ export class Span {
     let loc = this.find();
     if(!loc) return;
     return {from: loc.from, to: loc.to, span: this};
+  }
+
+  disable() {
+    if(!this.disabled) {
+      this.disabled = true;
+      if(this.refresh) this.refresh();
+    }
+  }
+  enable() {
+    if(this.disabled) {
+      this.disabled = false;
+      if(this.refresh) this.refresh();
+    }
+  }
+
+  isDisabled() {
+    return this.disabled;
   }
 
   sourceEquals(other:SpanSource) {
@@ -308,10 +329,14 @@ export class LineSpan extends Span {
   // Handlers
   refresh() {
     let loc = this.find();
-    if(!loc) return this.clear();
+    if(!loc) return;
 
     let end = loc.to.line + ((loc.from.line === loc.to.line) ? 1 : 0);
-    updateLineClasses(loc.from.line, end, this.editor, this);
+    if(!this.disabled) {
+      updateLineClasses(loc.from.line, end, this.editor, this);
+    } else {
+      clearLineClasses(loc.from.line, end, this.editor, this);
+    }
   }
 
   onBeforeChange(change:ChangeCancellable) {
@@ -381,21 +406,19 @@ export class BlockSpan extends Span {
     let loc = this.find();
     if(loc) {
       clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
-
-      // Nuke all parser spans that were in this range.
-      // Since the parser isn't stateful, it won't send us removals for them.
-      for(let span of this.editor.findSpans(loc.from, loc.to)) {
-        if(span.isEditorControlled()) continue;
-        span.clear();
-      }
     }
     super.clear(origin);
   }
 
   refresh() {
     let loc = this.find();
-    if(!loc) return this.clear();
-    updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+    if(!loc) return;
+
+    if(!this.disabled) {
+      updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+    } else {
+      clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+    }
   }
 
   onBeforeChange(change:ChangeCancellable) {
@@ -446,13 +469,27 @@ export class BlockSpan extends Span {
 
 interface ListItemSpanSource extends SpanSource {level: number, listData: {start?: number, type:"ordered"|"bullet"}}
 class ListItemSpan extends LineSpan {
-  constructor(editor:Editor, from:Position, to:Position, public source:ListItemSpanSource, origin = "+input") {
-    super(editor, from, to, source, origin);
-    source.listData = source.listData || {type: "bullet"}
-    source.level = source.level || 1;
-  }
+  source:ListItemSpanSource
+  bulletElem:HTMLElement;
 
   apply(from:Position, to:Position, origin = "+input") {
+    let source = this.source;
+    source.listData = source.listData || {type: "bullet"};
+    source.level = source.level || 1;
+
+    if(!this.bulletElem) {
+      this.bulletElem = document.createElement("span");
+    }
+    this.bulletElem.style.paddingRight = ""+10;
+    this.bulletElem.style.paddingLeft = ""+(20 * (source.level - 1));
+    this._attributes.widget = this.bulletElem;
+
+    if(source.listData.type === "bullet") {
+      this.bulletElem.textContent = "-";
+    } else {
+      this.bulletElem.textContent = `${source.listData.start !== undefined ? source.listData.start : 1}.`;
+    }
+
     this.lineTextClass = `ITEM ${this.source.listData.type} level-${this.source.level} start-${this.source.listData.start}`;
     super.apply(from, to, origin);
   }
@@ -520,6 +557,24 @@ class ElisionSpan extends BlockSpan {
     this.element.className = "elision-marker";
     this._attributes.replacedWith = this.element;
     super.apply(from, to, origin);
+
+    let doc = this.editor.cm.getDoc();
+
+    for(let span of this.editor.findSpansAt(from).concat(this.editor.findSpans(from, to))) {
+      if(span === this) continue;
+      span.disable();
+    }
+  }
+
+  clear(origin = "+delete") {
+    let loc = this.find();
+    super.clear(origin);
+    if(loc) {
+      for(let span of this.editor.findSpansAt(loc.from).concat(this.editor.findSpans(loc.from, loc.to))) {
+        if(span === this) continue;
+        span.enable();
+      }
+    }
   }
 }
 
@@ -528,6 +583,20 @@ class CodeBlockSpan extends BlockSpan {
     this.lineBackgroundClass = "CODE";
     this.lineTextClass = "CODE-TEXT";
     super.apply(from, to, origin);
+  }
+
+  clear(origin = "+delete") {
+    let loc = this.find();
+    super.clear(origin);
+
+    // Nuke all parser spans that were in this range.
+    // Since the parser isn't stateful, it won't send us removals for them.
+    if(loc) {
+      for(let span of this.editor.findSpans(loc.from, loc.to)) {
+        if(span.isEditorControlled()) continue;
+        span.clear();
+      }
+    }
   }
 }
 
@@ -538,6 +607,91 @@ class WhitespaceSpan extends LineSpan {
   }
 }
 
+export class BlockAnnotationSpan extends BlockSpan {
+  source:DocumentCommentSpanSource;
+  annotation?: CodeMirror.AnnotateScrollbar.Annotation;
+
+  apply(from:Position, to:Position, origin = "+input") {
+    this.lineBackgroundClass = "annotated annotated_" + this.source.kind;
+    this._attributes.className = null;
+    super.apply(from, to, origin);
+  }
+
+  clear(origin:string = "+delete") {
+    if(this.annotation) {
+      this.annotation.clear();
+      this.annotation = undefined;
+    }
+    if(!this.marker) return;
+    let loc = this.find();
+    if(loc) {
+      clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+    }
+    super.clear(origin);
+  }
+
+  refresh() {
+    let loc = this.find();
+    if(!loc) return this.clear();
+
+    if(!this.annotation) {
+      this.annotation = this.editor.cm.annotateScrollbar({className: `scrollbar-annotation ${this.source.kind}`});
+    }
+    if(loc) {
+      this.annotation.update([loc]);
+      if(!this.disabled) {
+        updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      } else {
+        clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      }
+    }
+  }
+}
+
+export class AnnotationSpan extends Span {
+  lineTextClass?:string
+  lineBackgroundClass?:string
+
+  source:DocumentCommentSpanSource;
+  annotation?: CodeMirror.AnnotateScrollbar.Annotation;
+
+  apply(from:Position, to:Position, origin = "+input") {
+    this.lineBackgroundClass = "annotated annotated_" + this.source.kind;
+    this._attributes.className = null;
+    super.apply(from, to, origin);
+  }
+
+  clear(origin:string = "+delete") {
+    if(this.annotation) {
+      this.annotation.clear();
+      this.annotation = undefined;
+    }
+    if(!this.marker) return;
+    let loc = this.find();
+    if(loc) {
+      clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+    }
+    super.clear(origin);
+  }
+
+  refresh() {
+    let loc = this.find();
+    if(!loc) return this.clear();
+
+    if(!this.annotation) {
+      this.annotation = this.editor.cm.annotateScrollbar({className: `scrollbar-annotation ${this.source.kind}`});
+    }
+    if(loc) {
+      this.annotation.update([loc]);
+      if(!this.disabled) {
+        updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      } else {
+        clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      }
+    }
+  }
+}
+
 export class ParserSpan extends Span {
   protected static _editorControlled = false;
   protected _editorControlled = false;
@@ -545,16 +699,34 @@ export class ParserSpan extends Span {
   _spanStyle:"inline" = "inline";
 }
 
-interface DocumentCommentSpanSource extends SpanSource { kind: "string", message: "string" }
+interface DocumentCommentSpanSource extends SpanSource { kind: string, message: string, delay?: number }
 export class DocumentCommentSpan extends ParserSpan {
   source:DocumentCommentSpanSource;
 
   lineBackgroundClass: string;
   annotation?: CodeMirror.AnnotateScrollbar.Annotation;
 
+  widgetLine?: number;
+  commentWidget?: CodeMirror.LineWidget;
+  commentElem?: HTMLElement;
+
   apply(from:Position, to:Position, origin = "+input") {
     this.lineBackgroundClass = "COMMENT_" + this.kind;
     this._attributes.className = this.type + " " + this.kind;
+
+    if(!this.commentElem) {
+      this.commentElem = document.createElement("div");
+    }
+
+    this.commentElem.className = "comment-widget" + " " + this.kind;
+
+    if(this.editor.inCodeBlock(to)) {
+      this.commentElem.className += " code-comment-widget";
+    }
+
+    if(this.source.delay) {
+      this["updateWidget"] = debounce(this.updateWidget, this.source.delay);
+    }
     super.apply(from, to, origin);
   }
 
@@ -571,62 +743,79 @@ export class DocumentCommentSpan extends ParserSpan {
       this.annotation.clear();
       this.annotation = undefined;
     }
+
+    if(this.commentWidget) {
+      this.commentWidget.clear();
+      this.commentElem.textContent = "";
+    }
   }
 
   refresh() {
     let loc = this.find();
     if(!loc) return this.clear();
-    updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+
     if(!this.annotation) {
       this.annotation = this.editor.cm.annotateScrollbar({className: `scrollbar-annotation ${this.kind}`});
     }
     if(loc) {
       this.annotation.update([loc]);
+      if(!this.disabled) {
+        updateLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      } else {
+        clearLineClasses(loc.from.line, loc.to.line, this.editor, this);
+      }
+
+      if(loc.to.line !== this.widgetLine) {
+        this.widgetLine = loc.to.line;
+        if(this.commentWidget) this.commentWidget.clear();
+        this.updateWidget();
+      }
     }
+  }
+
+  updateWidget() {
+    if(this.commentWidget) this.commentWidget.clear();
+    let loc = this.find();
+    if(!loc) return;
+    this.commentWidget = this.editor.cm.addLineWidget(this.widgetLine, this.commentElem);
   }
 
   get kind() { return this.source.kind || "error"; }
   get message() { return this.source.message; }
+}
 
-  onBeforeChange(change:ChangeCancellable) {
-    let loc = this.find();
-    if(!loc) return;
-    let doc = this.editor.cm.getDoc();
-    let isEmpty = doc.getLine(loc.from.line) === "";
+interface BadgeSpanSource extends SpanSource { kind: string, message: "string" }
+class BadgeSpan extends ParserSpan {
+  source:BadgeSpanSource;
 
-    //If we're at the beginning of an empty block and delete we mean to remove the span.
-    if(samePosition(loc.from, change.to) && isEmpty && change.origin === "+delete") {
-      this.clear();
-      change.cancel();
+  badgeMarker:SpanMarker|undefined;
+  badgeElem:HTMLElement;
+
+  apply(from:Position, to:Position, origin = "+input") {
+    this._attributes.className = `badge ${this.source.kind || ""}`;
+    if(!this.badgeElem) {
+      this.badgeElem = document.createElement("div");
+      this.badgeElem.className = `badge-widget ${this.source.kind || ""}`;
     }
+
+    this.badgeElem.textContent = this.source.message;
+
+    super.apply(from, to, origin);
+
+    let doc = this.editor.cm.getDoc();
+    this.badgeMarker = doc.setBookmark(to, {widget: this.badgeElem});
+    this.badgeMarker.span = this;
   }
 
-  onChange(change:Change) {
-    let loc = this.find();
-    if(!loc) return;
+  clear(origin = "+delete") {
+    super.clear(origin);
 
-    // Absorb local changes around a block.
-    let from = {line: loc.from.line, ch: 0};
-    let to = {line: loc.to.line, ch: 0};
-    if(loc.to.ch !== 0) {
-      to.line += 1;
+    if(this.badgeMarker) this.badgeMarker.clear();
+
+    if(this.badgeElem && this.badgeElem.parentNode) {
+      this.badgeElem.parentNode.removeChild(this.badgeElem);
     }
-
-    // If new text has been inserted left of the block, absorb it
-    // If the block's end has been removed, re-align it to the beginning of the next line.
-    if(comparePositions(change.final, change.to) >= 0) {
-      from.line = Math.min(loc.from.line, change.from.line);
-      to.line = Math.max(loc.to.line, change.to.line);
-      if(to.line === change.to.line && change.to.ch !== 0) {
-        to.line += 1;
-      }
-    }
-
-
-    if(!samePosition(from, loc.from) || !samePosition(to, loc.to)) {
-      this.clear();
-      this.editor.markSpan(from, to, this.source);
-    }
+    this.badgeElem = undefined;
   }
 }
 
@@ -647,9 +836,15 @@ export var spanTypes = {
   heading: HeadingSpan,
   item: ListItemSpan,
   elision: ElisionSpan,
+  elision_transient: ElisionSpan,
+  highlight: InlineSpan,
+  shadow: InlineSpan,
   code_block: CodeBlockSpan,
 
   document_comment: DocumentCommentSpan,
+  annotation: AnnotationSpan,
+  block_annotation: BlockAnnotationSpan,
+  badge: BadgeSpan,
   "default": ParserSpan
 }
 

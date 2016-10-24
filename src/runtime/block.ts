@@ -2,13 +2,12 @@
 // Block
 //---------------------------------------------------------------------
 
-import {Variable, isVariable, Scan, NotScan, IfScan, ProposalProvider, JoinOptions, join, nextId} from "./join";
+import {Variable, isVariable, Scan, NotScan, IfScan, ProposalProvider, JoinOptions, join} from "./join";
 import {MultiIndex} from "./indexes";
 import {Changes, ChangesIndex, ChangeType} from "./changes";
 import {Action, executeActions} from "./actions";
 import {Aggregate} from "./providers/aggregate"
-
-let perf = global["perf"];
+import {PerformanceTracker} from "./performance";
 
 //---------------------------------------------------------------------
 // DependencyChecker
@@ -24,7 +23,7 @@ export class DependencyChecker {
     this.dependencies = this.buildDependencies(map);
   }
 
-  buildVariableMap(block, variableMap = {}) {
+  buildVariableMap(block, variableMap = {"any": {attributes: {}}}) {
     for(let level of block.strata) {
       for(let scan of level.scans) {
         if(scan instanceof Scan) {
@@ -35,6 +34,8 @@ export class DependencyChecker {
             if(cur === undefined) {
               cur = variableMap[e.id] = {attributes: {}};
             }
+          } else {
+            cur = variableMap["any"];
           }
           if(!isVariable(a)) {
             let attrInfo = cur.attributes[a];
@@ -196,7 +197,8 @@ export class BlockStratum {
 }
 
 export class Block {
-  id: number;
+  static BlockId = 0;
+  id: any;
   strata: BlockStratum[];
   commitActions: Action[];
   bindActions: Action[];
@@ -211,7 +213,7 @@ export class Block {
   results: any[];
 
   constructor(name: string, strata: BlockStratum[], commitActions: Action[], bindActions: Action[], parse?: any) {
-    this.id = parse.id || nextId();
+    this.id = parse.id || Block.BlockId++;
     this.name = name;
     this.strata = strata;
     this.commitActions = commitActions;
@@ -239,18 +241,17 @@ export class Block {
     let {positions, info} = this.prevInserts;
     for(let key of Object.keys(positions)) {
       let pos = positions[key];
+      let type = info[pos];
+      let neuePos = newPositions[key];
+      let neueType = newInfo[neuePos];
       // if this was added
-      if(info[pos] === ChangeType.ADDED) {
-        let neuePos = newPositions[key];
-        // and it wasn't added in this one, we need to remove it
-        if(newInfo[neuePos] !== ChangeType.ADDED) {
-          let e = info[pos + 1];
-          let a = info[pos + 2];
-          let v = info[pos + 3];
-          let node = info[pos + 4];
-          let scope = info[pos + 5];
-          changes.unstore(scope,e,a,v,node);
-        }
+      if(neueType === undefined) {
+        let e = info[pos + 1];
+        let a = info[pos + 2];
+        let v = info[pos + 3];
+        let node = info[pos + 4];
+        let scope = info[pos + 5];
+        changes.unstore(scope,e,a,v,node);
       }
     }
   }
@@ -263,7 +264,6 @@ export class Block {
     }
     // console.groupCollapsed(this.name);
     // console.log("--- " + this.name + " --------------------------------");
-    let start = perf.time();
     let results = [[]];
     for(let stratum of this.strata) {
       results = stratum.execute(multiIndex, results);
@@ -279,7 +279,6 @@ export class Block {
     }
 
     if(this.bindActions.length !== 0) {
-      let start = perf.time();
       let diff = executeActions(multiIndex, this.bindActions, results, changes, true);
       this.updateBinds(diff, changes);
       this.prevInserts = diff;
