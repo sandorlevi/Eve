@@ -20,19 +20,46 @@ bind
 ```
 
 
+##set check if continue
+```
+       search c = [#charset class from text]
+       bind [#charset-child class from to:from parent:c]
+```
+
+##set continue
+```
+       search c = [#charset-child class from text to continue:off parent]
+             [tag:class name:substring[text from:to to]]
+       bind [#charset-child class from to:to + 1 parent c]
+```
+
+##set stop success
+```
+      search c = [#charset-child class from to text]
+             not([tag: class name: substring[text from:continue to:continue]])
+      bind   c.parent.to := continue
+```
+
+##set stop failure
+```
+      search c = [#charset-child class from to text]
+      not([tag: class name: substring[text from:continue to:continue]])
+      from = to
+      bind c.parent <- [fail:"no characters of class {{class}}"]
+```
+
+
+
+##number complete
+```
+       search n = [#number text from to]
+       bind  n <- [to: from val:string-to-number[text:substring[text from to]]]
+```
+
 ##number
 ```
        search n = [#number text from]
-                  name = substring[text from to:from]
-                  [#digit name]
-       bind  n <- [to: from + 1 val:string-to-number[text:name]]
-```
-
-## number fail
-```
-       search n = [#number text from]
-              not([#digit name:substring[text from to:from]])
-       bind n.fail := "not a number"
+       bind  n <- [#charset class:"digit"]
 ```
 
 ## expressions
@@ -76,7 +103,7 @@ bind
 ### left expression success
 ```
          search e = [#left-expression val to text parent]
-         bind e.next := [#center-expression text parent from:to prev:e]
+         bind e.next := [#center-expression text parent from:to + 1 prev:e]
 ```
 
 ### left expression start
@@ -96,5 +123,11 @@ bind
 
 ## test case
 ```
-          bind [#expression text: "4+5*7"]
+          bind [#expression text: "4+513*7+217"]
+```
+
+```
+   search record = []
+          lookup[record attribute value]
+   commit @browser [#div text:"{{record}} {{attribute}} {{value}}"]
 ```
