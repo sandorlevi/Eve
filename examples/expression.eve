@@ -20,35 +20,55 @@ bind
 ```
 
 
-##set check if continue
+
+## charset
+Set the to field in the #charset object to the final offset in _text_ which
+matches the set, or if no characters match the set, set the _fail_ attribute.
+###set initialize
 ```
        search c = [#charset class from text]
        bind [#charset-child to:from parent:c]
 ```
 
-##set continue
+### set continue
+there is an existing charset, we match the class, and we restart the process
+at the next position
 ```
        search c = [#charset-child to parent]
              [tag:parent.class name:substring[text:parent.text from:to to]]
        bind [#charset-child to:to + 1 parent]
-      bind @browser [#div text:"tomatoe!!!!! {{c}}"]
 ```
 
-##set stop success
+### set stop success
+we found a non-matching character, if there are any matched characters then
+signal success by binding _to_
+
 ```
       search c = [#charset-child to parent]
              not([tag:parent.class name:substring[text:parent.text from:to to]])
              not(parent.from = to)
       bind   c.parent.to := to - 1
-      bind @browser [#div text:"potatoe!!!!! {{c}}"]
 ```
-
-##set stop failure
+### set stop failure
+otherwise set _fail_ with an appropriate error object (not a string as currently
+exists)
 ```
       search c = [#charset-child to parent]
              not([tag: parent.class name: substring[text:parent.text from:to to]])
              parent.from = to
       bind c.parent <- [fail:"no characters of class {{parent.class}}"]
+```
+
+##number complete
+```
+       search n = [#number text from to]
+       bind  n <- [val:string-to-number[text:substring[text from to]]]
+```
+
+##number
+```
+       search n = [#number text from]
+       bind  n <- [#charset class:"digit"]
 ```
 
 
@@ -125,11 +145,6 @@ bind
 
 ## test case
 ```
+          // xxx - both additions are binding to * here
           bind [#expression text: "4+513*7+217"]
-```
-
-```
-   search record = []
-          lookup[record attribute value]
-   commit @browser [#div text:"{{record}} {{attribute}} {{value}}"]
 ```

@@ -5,7 +5,7 @@
 import {PerformanceTracker, NoopPerformanceTracker} from "./performance";
 
 const TRACK_PERFORMANCE = true;
-const MAX_ROUNDS = 300;
+const MAX_ROUNDS = 100;
 
 //---------------------------------------------------------------------
 // Setups

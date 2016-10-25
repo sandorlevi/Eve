@@ -1,0 +1,282 @@
+# parse EVE
+TODO
+   - clean up the inheritance and replication of text. we dont really need to keep
+     copying it to sub objects, but we dont want to hardwire in the number of
+     parent references to follow up
+
+## operators and lexical classes
+```
+bind
+  [name: "*" precedence:3 #operator #blocking]
+  [name: "-" precedence:2 #operator #blocking]
+  [name: "/" precedence:3 #operator #blocking]
+  [name: "+" precedence:2 #operator #blocking]
+  [name: "=" precedence:4 #operator #blocking]
+  [name: "@" #blocking]
+  [name: "#" #blocking]
+  [name: "." #blocking] // this guy can't be used inside an object reference if the lhs is free (?)
+  [name: "," #blocking]
+  [name: "(" #blocking]
+  [name: ")" #blocking]
+  [name: "[" #blocking]
+  [name: "]" #blocking]
+  [name: "{" #non-string #blocking]
+  [name: "}" #blocking]
+  [name: "⦑" #blocking]
+  [name: "⦒" #blocking]
+  [name: ":" #blocking]
+  [name: "\"" #blocking]
+  [name: " " #whitespace #blocking]
+  [name: "\n" #whitespace #blocking]
+  [name: "\t" #whitespace #blocking]
+  [name: "0" #digit]
+  [name: "1" #digit]
+  [name: "2" #digit]
+  [name: "3" #digit]
+  [name: "4" #digit]
+  [name: "5" #digit]
+  [name: "6" #digit]
+  [name: "7" #digit]
+  [name: "8" #digit]
+  [name: "9" #digit]
+  // consider if substring should just not return out of bounds
+  [name: "" #blocking]
+```
+
+
+#general parser combinators
+## charset
+Set the to field in the #charset object to the final offset in _text_ which
+matches the set, or if no characters match the set, set the _fail_ attribute.
+###set initialize
+```
+       search c = [#charset class from text]
+       bind [#charset-child to:from from parent:c]
+       commit @browser [#div text:"charsetinit {{class}} {{from}}"]
+```
+
+### set continue
+there is an existing charset, we match the class, and we restart the process
+at the next position
+```
+       search c = [#charset-child from to parent]
+             [tag:parent.class name:substring[text:parent.text from:to to]]
+       bind [#charset-child from to:to + 1 parent]
+```
+
+### set stop success
+we found a non-matching character, if there are any matched characters then
+signal success by binding _to_
+
+```
+      search c = [#charset-child from to parent]
+             // parent.from // XXX - this is never true
+             not([tag:parent.class name:substring[text:parent.text from:to to]])
+             not(from = to)
+      bind   parent.to := to - 1
+      commit @browser [#div text:"stop success {{c}} {{parent}} {{to}}"]
+```
+### set stop failure
+otherwise set _fail_ with an appropriate error object (not a string as currently
+exists)
+```
+      search c = [#charset-child from to parent]
+             not([tag: parent.class name: substring[text:parent.text from:to to]])
+             from = to
+      bind c.parent <- [fail:"no characters of class {{parent.class}}"]
+```
+
+
+## not-charset
+this is a full-on duplication of charset. the alternative would to be to push another
+layer of intermediate objects which define an acceptor for a generalized set
+collector. this might fold in with the generic repeat combinator, except for the
+difference in semantic value.
+
+TODO - this can run off the end of the string, since "" may not be in the class,
+consider if substring should fail to emit an empty string
+
+### notset initialize
+```
+       search c = [#not-charset class from text]
+       bind [#not-charset-child to:from from parent:c class text]
+       commit @browser [#div text:"anticharsetinit {{class}}"]
+```
+### notset continue
+```
+       search c = [#not-charset-child to from parent class text]
+              not([tag:class name:substring[text from:to to]])
+       bind [#not-charset-child from to:to + 1 parent class text]
+```
+### notset stop success
+```
+      search c = [#not-charset-child to parent from class text]
+             [tag:class name:substring[text from:to to]]
+             not(from = to)
+      bind   c.parent.to := to - 1
+```
+### notset stop failure
+```
+      search c = [#not-charset-child to parent from class text]
+             [tag: class name: substring[text from:to to]]
+             parent = to
+      bind c.parent <- [fail:"no characters not in class {{parent.class}}"]
+```
+
+
+## or combinator
+When we instantiate an or, we create all the possible parse objects. These
+objects start in a latent state since they have no _from_ attribute.
+When we have no objects without a fail attribute, we fail the parent
+clause.
+
+### success
+we found a successful child. unfortunately. val is mandatory in the
+child to avoid adding a duplicate block without it.
+```
+   search parent = [#or]
+          child = [#or-agent parent:p to val]
+   bind parent <- [to val]
+```
+
+### promote
+look for the state where we have latent children and no active children.
+pick a new child to send into the hopper
+```
+search  p = [#or not(to) children from]
+        // no one running
+        not([#or-agent parent:p from not(to) not(fail)])
+        // filter out those who have already had a go
+        not ([#or-agent template:children parent:p])
+        b = min[value:children given:children]
+        lookup[record:b attribute value]
+        // promote
+bind    c = [#or-agent parent:p text:p.text template:b from]
+        lookup[record:c attribute value]
+commit @browser [#div text:"zanky promote {{b}}"]
+```
+### fail
+```
+   search  p = [#or children]
+               not([#or-agent template:children])
+   bind
+          // could concatenate them or copy an special error message from the
+          // parent object
+          p.fail := "no or clause matched"
+```
+
+### success
+children have to have to and val
+```
+   search  p = [#or-agent to val parent]
+   bind p <- [to val]
+```
+
+### start
+instantiate all the childrens. we add a _children_ attribute to each,
+just so there is a 1-1 between the #or children and the #or-agent
+```
+   search p = [#or children parent]
+
+   bind
+
+```
+
+
+# basic atom handlers
+##variable complete
+```
+       search v = [#variable text from to]
+       bind v.val := substring[text from to]
+```
+##variable start
+```
+       search v = [#variable text from]
+       bind  v <- [#not-charset class:"blocking"]
+```
+
+##number complete
+```
+       search n = [#number text from to]
+       bind n.val := string-to-number[text:substring[text from to]]
+```
+
+##number start
+```
+       search n = [#number text from]
+       bind  n <- [#charset class:"digit"]
+```
+
+## expressions
+
+### collapse stack
+- how do I pull the root out of this guy now? looks like i have to generate a height (but how)
+```
+      search e = [#center-expression text from to next prev]
+             nn = next.next
+             pp = prev.prev
+             right = if nn.precedence > e.precedence then nn else next
+             left = if pp.precedence > e.precedence then pp else prev
+      commit @browser
+           [#div text: "zikky: {{substring[text from to]}} {{substring[text from:left.from to:left.to]}} {{substring[text from:right.from to:right.to]}}"]
+      bind
+             e.right := right
+             e.left := left
+```
+
+### center expression failure
+```
+      search c = [#center-expression text parent from]
+                 not(operator = [#operator name]
+                     name = substring[text from to:from + string-length[text:name] - 1])
+      bind   c.precedence := 0
+             c.fail := "unknown operator"
+```
+
+### center expression success
+
+```
+      search c = [#center-expression text parent from]
+             operator = [#operator name]
+             olength = string-length[text:name]
+             name = substring[text from to:olength + from - 1]
+      bind  c <- [next: [#left-expression parent text from: from + olength prev:c]
+                  precedence: operator.precedence
+                  to: from + olength - 1]
+```
+
+### left expression success
+```
+         search e = [#left-expression val to text parent]
+         bind e.next := [#center-expression text parent from:to + 1 prev:e]
+```
+
+### left expression start
+Start a leaf expression parser. we assume that each of the possible
+inputs is lexically disjoint.
+TODO
+  - should be trivial to add parenthetical expressions at this point.
+```
+         search e = [#left-expression text from parent]
+         bind e <- [#or text from children:([#number parent:e]
+                                            [#variable parent:e])]
+```
+
+
+###start
+```
+          search parent = [#expression text]
+          bind [#left-expression text from:1 parent prev:[precedence:0]]
+```
+
+
+## test case
+```
+          bind [#expression text: "tarn+513*foofie+217"]
+```
+
+```
+   search record = []
+          lookup[record attribute value]
+   commit @browser [#div text:"{{record}} {{attribute}} {{value}}"]
+```
