@@ -263,7 +263,7 @@ export class Block {
       this.dormant = true;
     }
     // console.groupCollapsed(this.name);
-    // console.log("--- " + this.name + " --------------------------------");
+    console.log("--- " + this.name + " --------------------------------");
     let results = [[]];
     for(let stratum of this.strata) {
       results = stratum.execute(multiIndex, results);

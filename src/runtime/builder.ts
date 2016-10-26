@@ -703,14 +703,15 @@ export function buildBlock(block) {
   let context = new BuilderContext(block);
   let {strata, binds, commits} = buildStrata(block, context);
 
-  // console.log("-- scans ----------------------------------------------------------------");
-  // console.log(inspect(scans, {colors: true, depth: 10}));
+//  console.log ("blocky:", block.name)
+//  console.log("-- scans ----------------------------------------------------------------");
+//  console.log(inspect(scans, {colors: true, depth: 10}));
 
-  // console.log("-- binds ----------------------------------------------------------------");
-  // console.log(inspect(binds, {colors: true}));
+//  console.log("-- binds ----------------------------------------------------------------");
+//  console.log(inspect(binds, {colors: true}));
 
-  // console.log("-- commits --------------------------------------------------------------");
-  // console.log(inspect(commits, {colors: true}));
+//  console.log("-- commits --------------------------------------------------------------");
+//  console.log(inspect(commits, {colors: true}));
 
   let ix = 0;
   for(let unprovided of context.unprovided) {

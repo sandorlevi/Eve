@@ -51,6 +51,7 @@ function parseMarkdown(markdown: string, docId: string) {
   var spans = [];
   var context = [];
   var blocks = [];
+  var lasttext = "";
   while(cur = walker.next()) {
     let node = cur.node;
     if(cur.entering) {
@@ -62,6 +63,10 @@ function parseMarkdown(markdown: string, docId: string) {
       if(node.type !== "text") {
         context.push({node, start: pos});
       }
+      if (node.type == "text") {
+        lasttext += node.literal;
+      }
+
       if(node.type == "text" || node.type === "code_block" || node.type == "code") {
         text.push(node.literal);
         pos += node.literal.length;
@@ -77,6 +82,8 @@ function parseMarkdown(markdown: string, docId: string) {
         let start = context.pop().start;
         node.id = spanId;
         node.startOffset = start;
+        node.annotation = lasttext;
+        lasttext = "";
         let type = node.type;
         if(!node._isFenced) {
           type = "indented_code_block";
@@ -458,11 +465,13 @@ class Parser extends chev.Parser {
         self.OR([
           {ALT: () => {
             let content = self.CONSUME(DocContent);
+            console.log("doc content", content)
             doc.full.push(content);
             doc.content.push(content);
           }},
           {ALT: () => {
             let block : any = self.SUBRULE(self.fencedBlock);
+            console.log("blocko")
             if(doc.content.length) {
               block.name = doc.content[doc.content.length - 1].image;
             } else {
@@ -1405,6 +1414,7 @@ export function parseDoc(doc, docId = `doc|${docIx++}`) {
     if(errors.length) {
       allErrors.push(errors);
     } else {
+      results.name = block.annotation
       results.endOffset = block.endOffset;
       parsedBlocks.push(results);
     }

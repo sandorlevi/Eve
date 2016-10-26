@@ -142,7 +142,7 @@ export class Changes {
   }
 
   store(scope, e,a,v,node?) {
-    // console.log("STORING", e, a, v, node, this.index.lookup(e,a,v,node) === undefined);
+//    console.log("STORING", e, a, v, node);
     let key = this.changes[this.round].store(scope,e,a,v,node);
     let captured = this.capturedChanges;
     if(captured !== undefined) {
@@ -151,7 +151,7 @@ export class Changes {
   }
 
   unstore(scope, e,a,v,node?) {
-    // console.log("REMOVING", e, a, v, node, this.index.lookup(e,a,v,node) === undefined);
+//    console.log("REMOVING", e, a, v, node);
     if(node === undefined) {
       //multidb
       let level = this.index.getIndex(scope).lookup(e,a,v);
@@ -303,4 +303,3 @@ export class Changes {
     this._storeObject("unstore", id, object, node, scope);
   }
 }
-
