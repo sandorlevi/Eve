@@ -1,0 +1,34 @@
+~~~
+commit @browser
+   [#div #twitter text:"twitter" style:[border:"10px"]]
+~~~
+
+why does this have to be event and browser?
+~~~
+  search @event @browser
+      [#click element:[#twitter]]
+  commit @server
+      [#login service:"twitter"]
+  commit @browser
+      [#div text:"clack"]
+~~~
+
+server starts the login
+~~~
+  search @server
+      k = [#login service]
+  commit @browser-session
+      z = [#zikky name:"zed"]
+~~~
+
+browser gets response
+~~~
+  search @browser-session
+      z = [#zikky name]
+      lookup[record:z attribute value]
+
+  commit @browser
+     [#div text:"hello! {{name}}"]
+     [#div text:"{{attribute}} {{value}}"]
+~~~
+

@@ -229,6 +229,7 @@ export class Scan {
     proposal.indexType = undefined;
     proposal.cardinality = 0;
     let scopeIx = 0;
+    console.log("getprop", JSON.stringify(this.scopes))
     for(let scope of this.scopes) {
       let curIndex = multiIndex.getIndex(scope);
       switch(lookupType) {
@@ -270,6 +271,7 @@ export class Scan {
           proposal.indexType = "fullScan";
           break;
       }
+      console.log("get prop ", scope, JSON.stringify(proposal))
       scopeIx++;
     }
     return proposal;

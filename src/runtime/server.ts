@@ -8,7 +8,6 @@ import * as path from "path";
 import * as ws from "ws";
 import * as express from "express";
 import * as bodyParser from "body-parser";
-import * as minimist from "minimist";
 
 import {config, Config, Owner} from "../config";
 import {ActionImplementations} from "./actions";
@@ -19,6 +18,10 @@ import {Database} from "./runtime";
 import {RuntimeClient} from "./runtimeClient";
 import {BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase, BrowserServerDatabase} from "./databases/browserSession";
 import * as eveSource from "./eveSource";
+import {fromJS} from "./util/eavs";
+import {Changes} from "./changes"
+import {MultiIndex, TripleIndex} from "./indexes"
+
 
 //---------------------------------------------------------------------
 // Constants
@@ -34,6 +37,7 @@ const contentTypes = {
 }
 
 const shared = new PersistedDatabase();
+const initDatabase = new Database();
 
 
 global["browser"] = false;
@@ -51,7 +55,9 @@ class HTTPRuntimeClient extends RuntimeClient {
       "server": server,
       "shared": shared,
       "browser": new Database(),
+      "init": initDatabase
     }
+    console.log("zag", initDatabase.index.cardinalityEstimate)
     super(dbs);
     this.server = server;
   }
@@ -153,12 +159,14 @@ class SocketRuntimeClient extends RuntimeClient {
     const dbs = {
       "http": new HttpDatabase(),
       "shared": shared,
+      "init": initDatabase,
     }
     if(withIDE) {
       dbs["view"] = new BrowserViewDatabase();
       dbs["editor"] = new BrowserEditorDatabase();
       dbs["inspector"] = new BrowserInspectorDatabase();
     }
+    console.log("pap1 ", initDatabase.index.cardinalityEstimate)
     // in the case where we're running on both the client and the server,
     // we need to add a browser-session bag and also make our local browser bag
     // be a normal database that way we don't send UI that is already being handled
@@ -298,6 +306,28 @@ export function run() {
     }
   }
 
+  console.log("zag", config.initDB, JSON.stringify(config))
+
+  // load the init database if specified
+  if (config.initDB) {
+    fs.readFile(config.initDB, function (err, data) {
+       if (err) {
+         console.log("database read error", config.initDB, err)
+         throw err;
+       }
+       // this is wrong
+       let mid = new MultiIndex();
+       let changes =  new Changes(mid);
+       let id = fromJS(changes, JSON.parse(data.toString()), initDatabase.id, "whatami")
+       let committed = changes.commit()
+       let i = 0;
+       for (i =0 ; i < committed.length ; i+=6 ) {
+           initDatabase.index.store(committed[i+1], committed[i+2], committed[i+3])
+           console.log(committed[i+1], committed[i+2], committed[i+3])
+       }
+       })
+  }
+
   let app = createExpressApp();
   let server = http.createServer(app);
 
@@ -323,3 +353,4 @@ export function run() {
 if(require.main === module) {
   console.error("Please run eve using the installed eve binary.");
 }
+

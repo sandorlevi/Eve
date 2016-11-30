@@ -120,6 +120,7 @@ export abstract class RuntimeClient {
       this.evaluation.executeActions(actions);
     } else if(data.type === "result" && (data.database === "server" || data.database === "browser-session")) {
       // @TODO: should we allow databases other than server at some point?
+      console.log("TODO runtime client", data)
       if(!this.evaluation) return;
       // console.info("EVENT", json);
       let scopes = [data.database];

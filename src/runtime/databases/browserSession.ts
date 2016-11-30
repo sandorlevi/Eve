@@ -92,6 +92,7 @@ export class BrowserServerDatabase extends Database {
 
   onFixpoint(evaluation: Evaluation, changes: Changes) {
     super.onFixpoint(evaluation, changes);
+    console.log("we did a thing!")
     let name = evaluation.databaseToName(this);
     let result = changes.result({[name]: true}, true);
     if(result.insert.length || result.remove.length) {

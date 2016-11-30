@@ -8,7 +8,8 @@ var config = require("../build/src/config");
 var Owner = config.Owner;
 var server = require("../build/src/runtime/server");
 
-const argv = minimist(process.argv.slice(2), {boolean: ["server", "editor", "clientAndServer"]});
+const argv = minimist(process.argv.slice(2), {boolean: ["server", "editor", "clientAndServer"], 
+                                              string: ["db"]})
 
 // Since our current development pattern uses npm as its package repository, we treat the nearest ancestor directory with a package.json (inclusive) as the directory's "root".
 function findRoot(root) {
@@ -29,12 +30,14 @@ var runtimeOwner = argv["server"] ? Owner.server : Owner.client;
 runtimeOwner = argv["clientAndServer"] ? Owner.both : runtimeOwner;
 var controlOwner = argv["localControl"] ? Owner.client : Owner.server;
 var editor = argv["editor"] || false;
+var initDB = argv["db"]
 var filepath = argv["_"][0];
 var internal = false;
 
 var root = findRoot(process.cwd());
 var eveRoot = findRoot(__dirname);
 
+console.log(JSON.stringify(argv, 2))
 
 // If we're executing within the eve module/repo, we're running internally and should expose our examples, src, etc.
 // This should be handled down the road by some sort of a manifest in conjunction with the `root` rather than hardcoding.
@@ -56,7 +59,10 @@ if(!filepath) {
   filepath = path.resolve(filepath);
 }
 
-var opts = {internal: internal, runtimeOwner: runtimeOwner, controlOwner: controlOwner, editor: editor, port: port, path: filepath, internal: internal, root: root, eveRoot: eveRoot};
+var opts = {internal: internal, runtimeOwner: runtimeOwner, controlOwner: controlOwner, editor: editor, port: port, path: filepath, internal: internal, root: root, eveRoot: eveRoot, initDB:initDB};
+
+console.log(JSON.stringify(opts, 2))
+
 config.init(opts);
 
 server.run(opts);
