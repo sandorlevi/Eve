@@ -12,9 +12,12 @@ export class HttpDatabase extends Database {
 
   sendRequest(evaluation, requestId, request) {
     let options: any = {url: request.url[0], headers: {}};
+    console.log("Request", JSON.stringify(request))
     if(request.headers) {
       let headers = this.index.asObject(request.headers[0]);
+      console.log("headers", JSON.stringify(headers))     
       for(let header in headers) {
+        console.log("header", JSON.stringify(header), JSON.stringify(options))           
         options.headers[header] = headers[header];
       }
     }
@@ -30,10 +33,9 @@ export class HttpDatabase extends Database {
       options.body = request.body[0];
     }
     httpRequest(options, (error, response, body) => {
-      // console.log("GOT RESPONSE", response.statusCode);
-      // console.log(error);
-      // console.log(response);
-      // console.log(body);
+      console.log("GOT RESPONSE", JSON.stringify(response))
+      console.log(error);
+      console.log(body);
       let scope = "http";
       let responseId = `${requestId}|response`;
       let changes = evaluation.createChanges();

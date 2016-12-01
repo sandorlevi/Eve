@@ -13,15 +13,53 @@ why does this have to be event and browser?
       [#div text:"clack"]
 ~~~
 
-server starts the login
+// https://dev.twitter.com/oauth/overview/creating-signatures
+server starts the login by tickling twitter
 ~~~
   search @server
       k = [#login service]
-  commit @browser-session
+      [#twitter consumer-key consumer-secret]
+      url = "https://api.twitter.com/oauth/request_token"
+  bind 
+     [#oauth-request method:"POST" url secret:consumer-secret fields:
+          [oauth_callback:"http://aws.kodowa.com:8080/zikky"
+           oauth_consumer_key:consumer-key
+           oauth_nonce: "8a85"
+           oauth_timestamp: "1480565264"
+           oauth_signature_method: "HMAC-SHA1"
+           oauth_version: "1.0"]]
+~~~
+
+     
+// sign "POST&https%3A%2F%2Fapi.twitter.com%2F1%2Fstatuses%2Fupdate.json&include_entities%3Dtrue%26oauth_consumer_key%3Dxvz1evFS4wEEPTGEFPHBog%26oauth_nonce%3DkYjzVBB8Y0ZFabxSWbWovY3uYSQ2pTgmZeNu2VS4cg%26oauth_signature_method%3DHMAC-SHA1%26oauth_timestamp%3D1318622958%26oauth_token%3D370773112-GmHxMAgYyLbNEtIKZeRNFsMKPR9EyMZeS9weJAEb%26oauth_version%3D1.0%26status%3DHello%2520Ladies%2520%252B%2520Gentlemen%252C%2520a%2520signed%2520OAuth%2520request%2521"
+
+post oauth 1.0 request
+~~~
+search [#oauth-request method url secret fields]
+       lookup[record:fields attribute value]
+      // need to sort on attribute
+      // agg join
+      fields = join[value:"{{attribute}}={{value}}" sep:"&"]
+      base-string = url-escape[value:"{{method}}&{{url}}&{{fields}}"]
+      sig = base64[value:sha1-hmac[value:base-string key:secret]]
+      os = "oauth_signature=\"{{sig}}\""
+      // agg
+      optfields = join[value:"{{attribute}}=\"{{value}}\"" sep:","]
+  commit @http
+      [#request login:k url method
+                method:"POST" 
+                headers:[Authorization:"OAuth {{optfields}},{{os}}"]]
+~~~
+
+server gets response from twittar - do we have a timeout here
+~~~
+   search @http
+      [#request login response:[json]]
+   commit @browser 
       z = [#zikky name:"zed"]
 ~~~
 
-browser gets response
+browser gets response from server - load login page here with passed creds
 ~~~
   search @browser-session
       z = [#zikky name]

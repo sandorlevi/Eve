@@ -1,0 +1,17 @@
+```
+  commit
+       [#foo name:"a" level:0]
+       [#foo name:"zkp" level:1]
+       [#foo name:"parg" level:2]
+       [#foo name:"naxxo" level:3]
+```
+
+```
+   search [#foo name level]
+       k = join[value:name ordinal:level]
+   commit @browser
+       [#div text:k]
+```
+
+
+

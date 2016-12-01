@@ -57,7 +57,6 @@ class HTTPRuntimeClient extends RuntimeClient {
       "browser": new Database(),
       "init": initDatabase
     }
-    console.log("zag", initDatabase.index.cardinalityEstimate)
     super(dbs);
     this.server = server;
   }
@@ -166,7 +165,6 @@ class SocketRuntimeClient extends RuntimeClient {
       dbs["editor"] = new BrowserEditorDatabase();
       dbs["inspector"] = new BrowserInspectorDatabase();
     }
-    console.log("pap1 ", initDatabase.index.cardinalityEstimate)
     // in the case where we're running on both the client and the server,
     // we need to add a browser-session bag and also make our local browser bag
     // be a normal database that way we don't send UI that is already being handled
