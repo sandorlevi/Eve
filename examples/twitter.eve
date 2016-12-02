@@ -2,16 +2,24 @@
 commit @browser
    [#div #twitter text:"twitter" style:[border:"10px"]]
 ~~~
+
+why does this have to be event and browser?
 ~~~
-  search @event @browser [#click element:[#twitter]]
-  commit @server  [#login service:"twitter"]
-  commit @browser [#div text:"clack"]
+  search @event @browser
+      [#click element:[#twitter]]
+  commit @server
+      [#login service:"twitter"]
+  commit @browser
+      [#div text:"clack"]
 ~~~
+
+server starts the login by tickling twitter
 ~~~
   search @server k = [#login service]
   search @init [#twitter consumer-key consumer-secret]
   commit [#oauth-request
           method:"POST"
+          key:consumer-secret
           url:"https://api.twitter.com/oauth/request_token"
           fields:
             [oauth_callback:"http://aws.kodowa.com:8080/zikky"
@@ -21,17 +29,41 @@ commit @browser
              oauth_signature_method: "HMAC-SHA1"
              oauth_version: "1.0"]]
 ~~~
+
+sign the oauth request and add the signature field
 ~~~
-  search [#oauth-request method url fields]
+  search [#oauth-request method url fields:[not(oauth_signature)] key]
      lookup[record:fields attribute value]
      ordinal = sort[value:attribute given:attribute]
      sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{value}}" separator:"&" ordinal given:attribute]]}}"
-     sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{value}}" separator:"&" ordinal given:attribute]]}}"
-  commit @browser-session [#zikky sig]
+   commit
+      fields.oauth_signature := sha1hmac[text:sig key]
+    commit @browser-session [#zikky sig k:sha1hmac[text:sig key]]
 ~~~
+
+add the header and send the request
+~~~
+  search [#oauth-request method url fields:[oauth_signature]]
+     lookup[record:fields attribute value]
+     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:"," ordinal:0]}}"
+  commit @http
+     [#request #oauth-request url headers:[Authorization : oauth-header]]
+  commit @browser-session
+     z = [#zikky sent:oauth-header]
+     lookup[record:z attribute value]
+
+~~~
+
+get request status
+~~~
+  search @http
+    [#request #oauth-request response]
+  commit @browser-session [#zikky resp:"resp"]
+~~~
+
+report back to the browser
 ~~~
   search @browser-session  z = [#zikky]
         lookup[record:z attribute value]
   commit @browser [#div text:"{{attribute}} {{value}}"]
 ~~~
-
