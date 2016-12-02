@@ -206,6 +206,8 @@ export class Join extends Aggregate {
       let ordinal = toValue(this.ordinal, row);
       let separator = toValue(this.separator, row);
 
+      if (separator === undefined) separator = "";
+
       let groupKey = "[]";
       if(group.length !== 0) {
         groupKey = JSON.stringify(group);
@@ -218,7 +220,7 @@ export class Join extends Aggregate {
       let projectionKey = JSON.stringify(projection);
       if(groupValues[projectionKey] === undefined) {
         groupValues[projectionKey] = true;
-        groupValues.result = {value: value, ordinal:ordinal, separator:separator}
+        groupValues.result.push({value: value, ordinal:ordinal, separator:separator})
       }
     }
 
@@ -230,7 +232,10 @@ export class Join extends Aggregate {
         let len = s.length
         let result = ""
         for (var i=0; i<len; ++i) {
-          result += s[i].value + s[i].sep
+            // this means that the sep assocated with a value
+            // is the one which occurs before the value
+            if (i != 0) result += s[i].separator
+            result += s[i].value 
         }
         groups[g].result = result;
     }

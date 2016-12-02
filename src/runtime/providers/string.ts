@@ -4,6 +4,7 @@
 
 import {Constraint} from "../join";
 import * as providers from "./index";
+import * as Crypto from "cryptojs";
 
 // Concat strings together. Args expects a set of variables/string constants
 // to concatenate together and an array with a single return variable
@@ -251,9 +252,49 @@ class Urlencode extends Constraint {
   }
 }
 
+// sign a string with sha1-hmac and return its base64 encoded result
+class Sha1Hmac extends Constraint {
+  static AttributeMapping = {
+    "text": 0,
+    "key": 1
+  }
+  static ReturnMapping = {
+    "value": 0,
+  }
+
+  // To resolve a proposal, we urlencode a text
+  resolveProposal(proposal, prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let value = args[0];
+    let converted;
+    converted = Crypto.HmacSHA1("Message", "Secret Passphrase");
+    return [converted];
+  }
+
+  test(prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let value = args[0];
+
+    let converted = encodeURIComponent(value);
+
+    return converted === returns[0];
+  }
+
+  // Urlencode always returns cardinality 1
+  getProposal(tripleIndex, proposed, prefix) {
+    let proposal = this.proposalObject;
+    let {args} = this.resolve(prefix);
+    let value = args[0];
+    proposal.cardinality = 1;
+    proposal.providing = proposed;
+    return proposal;
+  }
+}
+
 
 providers.provide("concat", Concat);
 providers.provide("split", Split);
 providers.provide("substring", Substring);
 providers.provide("convert", Convert);
 providers.provide("urlencode", Urlencode);
+providers.provide("sha1hmac", Sha1Hmac);

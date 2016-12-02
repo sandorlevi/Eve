@@ -1,3 +1,3 @@
 #!/bin/bash
 
-npm start -- --db /home/hoffman/tokens.json --clientAndServer /home/hoffman/Eve/examples/twitter.eve
+npm start -- --db $HOME/tokens.json --clientAndServer $HOME/Eve/examples/twitter.eve
