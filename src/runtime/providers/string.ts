@@ -4,7 +4,7 @@
 
 import {Constraint} from "../join";
 import * as providers from "./index";
-import {CryptoJS} from "cryptojs";
+import * as Crypto from "crypto-js";
 
 // Concat strings together. Args expects a set of variables/string constants
 // to concatenate together and an array with a single return variable
@@ -264,9 +264,10 @@ class Sha1Hmac extends Constraint {
 
   // To resolve a proposal, we urlencode a text
   resolveProposal(proposal, prefix) {
-    let c = new CryptoJS()
     let {args, returns} = this.resolve(prefix);
-    return [c.HmacSHA1(args[0], args[1])];
+    let result = Crypto.HmacSHA1(args[0], args[1])
+    let result_string = Crypto.enc.Base64.stringify(result)
+    return [result_string];
   }
 
   test(prefix) {

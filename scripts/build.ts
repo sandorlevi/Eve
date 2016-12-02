@@ -68,7 +68,8 @@ export function build(callback:() => void) {
 
   // Copy node dependencies required by the browser.
   let deps = [
-    "node_modules/chevrotain/lib/chevrotain.js"
+    "node_modules/chevrotain/lib/chevrotain.js",
+    "node_modules/crypto-js/crypto-js.js"
   ];
   for(let dep of deps) {
     dep = path.resolve(dep);

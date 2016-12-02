@@ -7,51 +7,57 @@ why does this have to be event and browser?
 ~~~
   search @event @browser
       [#click element:[#twitter]]
+      [#time timestamp]
   commit @server
-      [#login service:"twitter"]
+      [#login service:"twitter" timestamp]
   commit @browser
       [#div text:"clack"]
 ~~~
 
 server starts the login by tickling twitter
 ~~~
-  search @server k = [#login service]
-  search @init [#twitter consumer-key consumer-secret]
-  commit [#oauth-request
+  search @server
+         k = [#login service timestamp]
+  search @init
+         [tag:service consumer-key consumer-secret]
+  commit
+         [#oauth-request
           method:"POST"
-          key:consumer-secret
+          key:"{{urlencode[text:consumer-secret]}}&"
           url:"https://api.twitter.com/oauth/request_token"
           fields:
             [oauth_callback:"http://aws.kodowa.com:8080/zikky"
              oauth_consumer_key:consumer-key
-             oauth_nonce: "8a85"
-             oauth_timestamp: "1480565264"
+             oauth_nonce: "8d85adfddf001a39954989af"
+             oauth_timestamp: floor[timestamp/1000.0]
              oauth_signature_method: "HMAC-SHA1"
              oauth_version: "1.0"]]
 ~~~
 
 sign the oauth request and add the signature field
 ~~~
-  search [#oauth-request method url fields:[not(oauth_signature)] key]
-     lookup[record:fields attribute value]
+  search
+     r = [#oauth-request method fields url key]
+     not(r.fields.oauth_signature)
+     lookup[record:r.fields attribute value]
      ordinal = sort[value:attribute given:attribute]
      sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{value}}" separator:"&" ordinal given:attribute]]}}"
    commit
       fields.oauth_signature := sha1hmac[text:sig key]
-    commit @browser-session [#zikky sig k:sha1hmac[text:sig key]]
+   commit @browser-session [#zikky sig]
 ~~~
 
 add the header and send the request
 ~~~
-  search [#oauth-request method url fields:[oauth_signature]]
-     lookup[record:fields attribute value]
-     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:"," ordinal:0]}}"
+  search k = [#oauth-request method url fields:[oauth_signature]]
+     lookup[record:k.fields attribute value]
+     // encode?
+     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode:[text:value]}}\"" separator:"," ordinal:0 given:attribute]}}"
   commit @http
      [#request #oauth-request url headers:[Authorization : oauth-header]]
   commit @browser-session
      z = [#zikky sent:oauth-header]
      lookup[record:z attribute value]
-
 ~~~
 
 get request status
