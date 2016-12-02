@@ -3,10 +3,11 @@ commit @browser
    [#div #twitter text:"twitter" style:[border:"10px"]]
 ~~~
 
-why does this have to be event and browser?
+start the twitter login if the user presses the button
 ~~~
   search @event @browser
       [#click element:[#twitter]]
+  search
       [#time timestamp]
   commit @server
       [#login service:"twitter" timestamp]
@@ -29,7 +30,7 @@ server starts the login by tickling twitter
             [oauth_callback:"http://aws.kodowa.com:8080/zikky"
              oauth_consumer_key:consumer-key
              oauth_nonce: "8d85adfddf001a39954989af"
-             oauth_timestamp: floor[timestamp/1000.0]
+             oauth_timestamp: floor[value: timestamp / 1000.0]
              oauth_signature_method: "HMAC-SHA1"
              oauth_version: "1.0"]]
 ~~~
@@ -52,7 +53,7 @@ add the header and send the request
   search k = [#oauth-request method url fields:[oauth_signature]]
      lookup[record:k.fields attribute value]
      // encode?
-     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode:[text:value]}}\"" separator:"," ordinal:0 given:attribute]}}"
+     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:"," ordinal:0 given:attribute]}}"
   commit @http
      [#request #oauth-request url headers:[Authorization : oauth-header]]
   commit @browser-session
