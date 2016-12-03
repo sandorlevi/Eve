@@ -155,7 +155,6 @@ var supportedTagsArr = [
 
 // Obtained from https://www.w3.org/TR/SVG/eltindex.html
 var svgsArr = [
-  "a",
   "altGlyph",
   "altGlyphDef",
   "altGlyphItem",
@@ -738,4 +737,3 @@ function injectProgram(node, elem) {
 export function renderEve() {
   renderer.render([{c: "application-container", postRender: injectProgram}]);
 }
-

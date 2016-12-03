@@ -23,13 +23,13 @@ server starts the login by tickling twitter
          [tag:service consumer-key consumer-secret]
   commit
          [#oauth-request
-          method:"POST"
+          method:"GET"
           key:"{{urlencode[text:consumer-secret]}}&"
           url:"https://api.twitter.com/oauth/request_token"
           fields:
-            [oauth_callback:"http://aws.kodowa.com:8080/zikky"
+            [oauth_callback:"https://aws.kodowa.com:8080"
              oauth_consumer_key:consumer-key
-             oauth_nonce: "8d85adfddf001a39954989af"
+             oauth_nonce: "abcdefghijklmnopqrstuvwxyz012385"
              oauth_timestamp: floor[value: timestamp / 1000.0]
              oauth_signature_method: "HMAC-SHA1"
              oauth_version: "1.0"]]
@@ -42,35 +42,48 @@ sign the oauth request and add the signature field
      not(r.fields.oauth_signature)
      lookup[record:r.fields attribute value]
      ordinal = sort[value:attribute given:attribute]
-     sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{value}}" separator:"&" ordinal given:attribute]]}}"
+     sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{urlencode[text:value]}}" separator:"&" ordinal given:attribute]]}}"
    commit
       fields.oauth_signature := sha1hmac[text:sig key]
-   commit @browser-session [#zikky sig]
 ~~~
 
 add the header and send the request
 ~~~
   search k = [#oauth-request method url fields:[oauth_signature]]
      lookup[record:k.fields attribute value]
-     // encode?
-     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:"," ordinal:0 given:attribute]}}"
+     ordinal = sort[value:attribute given:attribute]
+     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:", " ordinal given:attribute]}}"
   commit @http
      [#request #oauth-request url headers:[Authorization : oauth-header]]
-  commit @browser-session
-     z = [#zikky sent:oauth-header]
-     lookup[record:z attribute value]
 ~~~
 
 get request status
 ~~~
   search @http
-    [#request #oauth-request response]
-  commit @browser-session [#zikky resp:"resp"]
+      [#request #oauth-request response]
+      k = split[text:response.body by:"&"]
+      a = split[text:k by:"=" index:1]
+      v = split[text:k by:"=" index:2]
+
+  commit @browser-session
+      [#trag url:"www.github.com"]
+      z = [#zikky foo:response.body]
+      lookup[record:z attribute:a value:v]
 ~~~
 
-report back to the browser
+print a debugging div
 ~~~
-  search @browser-session  z = [#zikky]
+  search @browser-session
+         z = [#zikky]
         lookup[record:z attribute value]
-  commit @browser [#div text:"{{attribute}} {{value}}"]
+  commit @browser
+     [#div text:"{{attribute}} {{value}}"]
+~~~
+
+build the login button
+~~~
+  search @browser-session
+        [#trag url]
+  commit @browser
+        [#a target:"_blank" href:url text:"login!"]
 ~~~
