@@ -1,0 +1,3 @@
+#!/bin/bash
+
+npm start -- --db $HOME/tokens.json --clientAndServer $HOME/mamarob/food-truck.eve.md
