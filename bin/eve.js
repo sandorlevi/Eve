@@ -7,7 +7,7 @@ var minimist = require("minimist");
 
 var config = require("../build/src/config");
 var Owner = config.Owner;
-var server = require("../build/src/runtime/server");
+var server = require("../build/src/server/server");
 
 const argv = minimist(process.argv.slice(2), {boolean: ["help", "version", "localControl", "server", "clientAndServer", "editor"]});
 

@@ -11,14 +11,14 @@ import * as bodyParser from "body-parser";
 import * as minimist from "minimist";
 
 import {config, Config, Owner} from "../config";
-import {ActionImplementations} from "./actions";
-import {PersistedDatabase} from "./databases/persisted";
-import {HttpDatabase} from "./databases/node/http";
-import {ServerDatabase} from "./databases/node/server";
-import {Database} from "./runtime";
-import {RuntimeClient} from "./runtimeClient";
-import {BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase, BrowserServerDatabase} from "./databases/browserSession";
-import * as eveSource from "./eveSource";
+import {ActionImplementations} from "../runtime/actions";
+import {PersistedDatabase} from "../runtime/databases/persisted";
+import {HttpDatabase} from "../runtime/databases/node/http";
+import {ServerDatabase} from "../runtime/databases/node/server";
+import {Database} from "../runtime/runtime";
+import {RuntimeClient} from "../runtime/runtimeClient";
+import {BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase, BrowserServerDatabase} from "../runtime/databases/browserSession";
+import * as eveSource from "../runtime/eveSource";
 
 //---------------------------------------------------------------------
 // Constants
