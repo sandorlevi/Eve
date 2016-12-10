@@ -8,9 +8,8 @@ var config = require("../build/src/config");
 var Owner = config.Owner;
 var server = require("../build/src/runtime/server");
 
-const argv = minimist(process.argv.slice(2), {boolean: ["server", "editor", "clientAndServer"], 
+const argv = minimist(process.argv.slice(2), {boolean: ["server", "editor", "clientAndServer"],
                                               string: ["db"]})
-const argv = minimist(process.argv.slice(2), {boolean: ["server", "editor", "clientAndServer"]});
 
 // Since our current development pattern uses npm as its package repository, we treat the nearest ancestor directory with a package.json (inclusive) as the directory's "root".
 function findRoot(root) {

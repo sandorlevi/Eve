@@ -273,9 +273,8 @@ class Sha1Hmac extends Constraint {
   test(prefix) {
     let {args, returns} = this.resolve(prefix);
     let value = args[0];
-
-    let converted = encodeURIComponent(value);
-
+    let result = Crypto.HmacSHA1(args[0], args[1])
+    let converted = Crypto.enc.Base64.stringify(result)
     return converted === returns[0];
   }
 
@@ -291,9 +290,43 @@ class Sha1Hmac extends Constraint {
 }
 
 
+// sign a string with sha1-hmac and return its base64 encoded result
+class Base64 extends Constraint {
+  static AttributeMapping = {
+    "text": 0,
+  }
+  static ReturnMapping = {
+    "value": 0,
+  }
+
+  // To resolve a proposal, we urlencode a text
+  resolveProposal(proposal, prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let result_string = Crypto.enc.Base64.stringify(Crypto.enc.Utf8.parse(args[0]))
+    return [result_string];
+  }
+
+  test(prefix) {
+    let {args, returns} = this.resolve(prefix);
+    let converted = Crypto.enc.Base64.stringify(Crypto.enc.Utf8.parse(args[0]))
+    return converted === returns[0];
+  }
+
+  // Urlencode always returns cardinality 1
+  getProposal(tripleIndex, proposed, prefix) {
+    let proposal = this.proposalObject;
+    let {args} = this.resolve(prefix);
+    let value = args[0];
+    proposal.cardinality = 1;
+    proposal.providing = proposed;
+    return proposal;
+  }
+}
+
 providers.provide("concat", Concat);
 providers.provide("split", Split);
 providers.provide("substring", Substring);
 providers.provide("convert", Convert);
 providers.provide("urlencode", Urlencode);
 providers.provide("sha1hmac", Sha1Hmac);
+providers.provide("base64", Base64);

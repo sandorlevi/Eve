@@ -1,0 +1,33 @@
+send the stripe test key to the browser
+```
+search @init
+    [#stripe url test-key]
+commit @browser-session
+    [#stripe url test-key]
+```
+
+```
+search @browser-session
+   s = [#stripe]
+commit @browser
+   [#div text:"stripy {{s.url}} {{base64[text:s.url]}}"]
+```
+
+```
+search @browser-session
+   s = [#stripe]
+commit @http
+  r = [#request #api
+       url:"{{s.url}}/v1/balance"
+       headers:[Authorization:"Basic {{base64[text:"{{s.test-key}}:"]}}"
+                Stripe-Version: "2016-07-06"]]
+commit @browser
+   [#div text:"sent"]
+```
+
+```
+search @http
+   r = [#request #api response:[json]]
+commit @browser
+   [#div text:response]
+```

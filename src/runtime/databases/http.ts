@@ -36,6 +36,7 @@ export class HttpDatabase extends Database {
     if(request.headers) {
       let headers = this.index.asObject(request.headers[0]);
       for(let header in headers) {
+        console.log("header", header)
         oReq.setRequestHeader(header, headers[header][0]);
       }
     }
@@ -62,6 +63,7 @@ export class HttpDatabase extends Database {
       if(!handled[e]) {
         handled[e] = true;
         if(index.lookup(e,"tag", "request") && !index.lookup(e, "tag", "sent")) {
+          console.log("got a request")
           let request = index.asObject(e);
           if(request.url) {
             actions.push(new InsertAction("http|sender", e, "tag", "sent", undefined, [name]));
