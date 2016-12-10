@@ -9,7 +9,7 @@ var config = require("../build/src/config");
 var Owner = config.Owner;
 var server = require("../build/src/runtime/server");
 
-const argv = minimist(process.argv.slice(2), {boolean: ["help", "version", "localControl", "server", "editor"]});
+const argv = minimist(process.argv.slice(2), {boolean: ["help", "version", "localControl", "server", "clientAndServer", "editor"]});
 
 // Since our current development pattern uses npm as its package repository, we treat the nearest ancestor directory with a package.json (inclusive) as the directory's "root".
 function findRoot(root) {
@@ -27,6 +27,7 @@ function findRoot(root) {
 
 var port = argv["port"] || process.env.PORT || 8080;
 var runtimeOwner = argv["server"] ? Owner.server : Owner.client;
+runtimeOwner = argv["clientAndServer"] ? Owner.both : runtimeOwner;
 var controlOwner = argv["localControl"] ? Owner.client : Owner.server;
 var editor = argv["editor"] || false;
 var filepath = argv["_"][0];
@@ -42,13 +43,16 @@ if(argv["help"]) {
 
     Usage: eve [flags] [file]
 
-    --help          Display this message.
-    --version       Display installed version and exit.
-    --server        Execute code on the server rather than the client.
-    --editor        Display the editor (default if no file is specified).
-    --port <number> Change the port the Eve server listens to (default 8080).
-    --localControl  Entirely disable server interaction. File changes will be
-                    stored in localStorage.
+    --help              Display this message.
+    --version           Display installed version and exit.
+    --editor            Display the editor (default if no file is specified).
+    --port <number>     Change the port the Eve server listens to (default 8080).
+
+    Advanced usage:
+    --server            Execute code on the server rather than the client.
+    --clientAndServer   Execute code on both server and client.
+    --localControl      Entirely disable server interaction. File changes will be
+                        stored in localStorage.
 
     If the Eve binary is run in a project directory (a directory containing a
     package.json file), it will use that directory as your workspace. Otherwise
