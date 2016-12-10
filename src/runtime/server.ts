@@ -108,6 +108,7 @@ function createExpressApp() {
     response.end(packaged);
   });
 
+  app.get("/vendor/*", handleStatic);
   app.get("/assets/*", handleStatic);
   app.get("/build/*", handleStatic);
 

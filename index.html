@@ -20,19 +20,19 @@
   </head>
   <body>
     <script type="text/javascript" src="build/workspaces.js"></script>
-    <script type="text/javascript" src="build/src/uuid.js"></script>
-    <script type="text/javascript" src="build/src/codemirror.js"></script>
-    <script type="text/javascript" src="build/src/simplescrollbars.js"></script>
-    <script type="text/javascript" src="build/src/annotatescrollbar.js"></script>
-    <script type="text/javascript" src="build/src/commonmark.js"></script>
-    <script type="text/javascript" src="build/src/microReact.js"></script>
-    <script type="text/javascript" src="build/src/system.js"></script>
+    <script type="text/javascript" src="vendor/uuid.js"></script>
+    <script type="text/javascript" src="vendor/codemirror.js"></script>
+    <script type="text/javascript" src="vendor/simplescrollbars.js"></script>
+    <script type="text/javascript" src="vendor/annotatescrollbar.js"></script>
+    <script type="text/javascript" src="vendor/commonmark.js"></script>
+    <script type="text/javascript" src="vendor/microReact.js"></script>
+    <script type="text/javascript" src="vendor/system.js"></script>
     <script>
       SystemJS.config({
         baseURL: "build/src",
       defaultJSExtensions: true,
         map: {fs: "@empty", path: "@empty", glob: "@empty", mkdirp: "@empty"},
-        meta: {"build/src/codemirror.js": { format: "cjs" }}
+        meta: {"vendor/codemirror.js": { format: "cjs" }}
       });
 
       // Kicks off requiring everyone else
