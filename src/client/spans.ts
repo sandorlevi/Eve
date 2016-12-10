@@ -1,5 +1,5 @@
 import * as CodeMirror from "codemirror";
-import {Editor, Change, ChangeCancellable} from "../ide";
+import {Editor, Change, ChangeCancellable} from "./ide";
 import {Range, Position, isRange, comparePositions, samePosition, whollyEnclosed, debounce} from "../util";
 
 type FormatAction = "add"|"remove"|"split"

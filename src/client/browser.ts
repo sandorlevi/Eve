@@ -2,15 +2,15 @@
 // Browser
 //---------------------------------------------------------------------
 
-import {Evaluation, Database} from "./runtime";
-import * as join from "./join";
-import {EveClient, client} from "../client";
-import * as parser from "./parser";
-import * as builder from "./builder";
-import {ids} from "./id";
-import {RuntimeClient} from "./runtimeClient";
-import {HttpDatabase} from "./databases/http";
-import {BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase, BrowserServerDatabase} from "./databases/browserSession";
+import {Evaluation, Database} from "../runtime/runtime";
+import * as join from "../runtime/join";
+import {EveClient, client} from "./client";
+import * as parser from "../runtime/parser";
+import * as builder from "../runtime/builder";
+import {ids} from "../runtime/id";
+import {RuntimeClient} from "../runtime/runtimeClient";
+import {HttpDatabase} from "../runtime/databases/http";
+import {BrowserViewDatabase, BrowserEditorDatabase, BrowserInspectorDatabase, BrowserServerDatabase} from "../runtime/databases/browserSession";
 
 //---------------------------------------------------------------------
 // Utils

@@ -1,7 +1,7 @@
 "use strict"
 
 import {Renderer} from "microReact";
-import {clone} from "./util";
+import {clone} from "../util";
 import {client, indexes} from "./client";
 
 //type RecordElementCollection = HTMLCollection | SVGColl

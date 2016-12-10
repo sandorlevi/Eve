@@ -1,10 +1,10 @@
 import {Renderer, Element as Elem, RenderHandler} from "microReact";
 import {Parser as MDParser} from "commonmark";
 import * as CodeMirror from "codemirror";
-import {debounce, uuid, unpad, Range, Position, isRange, compareRanges, comparePositions, samePosition, whollyEnclosed, adjustToWordBoundary, writeToGist, readFromGist} from "./util";
+import {debounce, uuid, unpad, Range, Position, isRange, compareRanges, comparePositions, samePosition, whollyEnclosed, adjustToWordBoundary, writeToGist, readFromGist} from "../util";
 
-import {Span, SpanMarker, isSpanMarker, isEditorControlled, spanTypes, compareSpans, SpanChange, isSpanChange, HeadingSpan, CodeBlockSpan, DocumentCommentSpan} from "./ide/spans";
-import * as Spans from "./ide/spans";
+import {Span, SpanMarker, isSpanMarker, isEditorControlled, spanTypes, compareSpans, SpanChange, isSpanChange, HeadingSpan, CodeBlockSpan, DocumentCommentSpan} from "./spans";
+import * as Spans from "./spans";
 
 import {activeElements} from "./renderer";
 import {client, indexes} from "./client";

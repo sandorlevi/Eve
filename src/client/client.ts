@@ -1,8 +1,8 @@
-import {clone, debounce, uuid, sortComparator} from "./util";
-import {Owner} from "./config";
+import {clone, debounce, uuid, sortComparator} from "../util";
+import {Owner} from "../config";
 import {sentInputValues, activeIds, renderRecords, renderEve} from "./renderer"
 import {IDE} from "./ide";
-import * as browser from "./runtime/browser";
+import * as browser from "./browser";
 
 import {IndexScalar, IndexList, EAV, Record} from "./db"
 
