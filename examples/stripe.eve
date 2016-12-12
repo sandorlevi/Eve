@@ -1,28 +1,57 @@
 send the stripe test key to the browser
+note that the tags have to be different here, to stop the browser
+from forwarding the stripe record to itself indefinately
 ```
 search @init
-    [#stripe url test-key]
+    [#stripe url test-publishable-key test-secret-key]
 commit @browser-session
-    [#stripe url test-key]
+    // dont send the secrete key
+    [#stripe-service url test-publishable-key test-secret-key] 
 ```
 
 ```
 search @browser-session
-   s = [#stripe]
+   s = [#stripe-service]
 commit @browser
    [#div text:"stripy {{s.url}} {{base64[text:s.url]}}"]
 ```
 
 ```
 search @browser-session
-   s = [#stripe]
+   s = [#stripe-service]
+bind @browser
+   style = [box-shadow: "inset 0 -1px 5px 0 rgba(0, 0, 0, 0.2)" width:"300px"]
+   [#div style:[display:"flex" display:"-webkit-box" flex-direction:"column"]
+         children:
+         // cant get these guys to obey explicit size or maxlength in characters
+         [#input #ccn placeholder: "Credit Card Number" style]
+         [#input #exp-month placeholder: "Expiration Month" style]
+         [#input #exp-year placeholder: "Expiration Year" style]
+         [#input #cvc placeholder: "CVC" style]
+         [#div #send-cc-info text:"send!"]]
+```
+
+```
+search @browser @event @session
+   [#click element:[#send-cc-info]]
+   [#input #ccn value:ccn]
+   [#input #exp-month value:exp-month]
+   [#input #exp-year value:exp-year]
+   [#input #cvc value:cvc]
+   data = "card[number]={{ccn}}&card[exp_month]={{exp-month}}&card[exp_year]={{exp-year}}&card[cvc]={{cvc}}"
+search @browser-session
+   s = [#stripe-service]   
 commit @http
-  r = [#request #api
-       url:"{{s.url}}/v1/balance"
-       headers:[Authorization:"Basic {{base64[text:"{{s.test-key}}:"]}}"
+   [#request #api
+       method:"POST"
+       url:"{{s.url}}/v1/tokens"
+       body: data
+       headers:[Authorization:"Bearer {{s.test-publishable-key}}"
+                Content-type: "application/x-www-form-urlencoded"
+                Access-Control-Allow-Origin: "localhost:8080"
                 Stripe-Version: "2016-07-06"]]
 commit @browser
-   [#div text:"sent"]
+   [#div text:"sending {{s.url}}/v1/token {{data}}"]
 ```
 
 ```
