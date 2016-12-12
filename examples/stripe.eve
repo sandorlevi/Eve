@@ -3,10 +3,9 @@ note that the tags have to be different here, to stop the browser
 from forwarding the stripe record to itself indefinately
 ```
 search @init
-    [#stripe url test-publishable-key test-secret-key]
+    [#stripe url test-publishable-key]
 commit @browser-session
-    // dont send the secrete key
-    [#stripe-service url test-publishable-key test-secret-key] 
+    [#stripe-service url test-publishable-key]
 ```
 
 ```
@@ -40,7 +39,7 @@ search @browser @event @session
    [#input #cvc value:cvc]
    data = "card[number]={{ccn}}&card[exp_month]={{exp-month}}&card[exp_year]={{exp-year}}&card[cvc]={{cvc}}"
 search @browser-session
-   s = [#stripe-service]   
+   s = [#stripe-service]
 commit @http
    [#request #api
        method:"POST"
@@ -54,9 +53,51 @@ commit @browser
    [#div text:"sending {{s.url}}/v1/token {{data}}"]
 ```
 
+
+browser gets the card token back from stripe, and relays it to the server for charging
+TODO - http.ts code needs to handle and propagate failures better
 ```
 search @http
    r = [#request #api response:[json]]
 commit @browser
-   [#div text:response]
+   [#div text:"got response {{json.id}}"]
+// construct the stripe object
+commit @server
+   [#charge source:json.id]
+```
+
+server gets stripe cc token and attempts to process the charge
+```
+search @init
+   stripe = [#stripe]
+search @server
+   charge = [#charge]
+   // examine the encoding for strings containing spaces...i dont know whats going
+   // on with url encoding
+   data = "amount=100&source={{charge.source}}&currency=usd&description=flosso"
+commit @http
+   [#request #charge-request
+             charge
+             method:"POST"
+             headers:[Authorization:"Basic {{base64[text:"{{stripe.test-secret-key}}:"]}}"
+                      Content-type: "application/x-www-form-urlencoded"]
+             url:"{{stripe.url}}/v1/charges"
+             body:data]
+```
+
+server gets response from stripe
+```
+search @http
+   [#request response]
+   lookup[record:response attribute value]
+commit @browser-session
+   [#charge status:"{{attribute}} {{value}}"]
+```
+
+browser gets response from server
+```
+search @browser-session
+   [#charge status]
+commit @browser
+   [#div text:"status: {{status}}"]
 ```
