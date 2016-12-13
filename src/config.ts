@@ -1,4 +1,4 @@
-export enum Owner {client, server};
+export enum Owner {client, server, both};
 export enum Mode {workspace, file};
 
 export interface Config {
