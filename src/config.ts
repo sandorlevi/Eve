@@ -1,6 +1,18 @@
-export enum Owner {client, server, both};
+export enum Owner {client, server};
+export enum Mode {workspace, file};
 
-export interface Config {path?:string, runtimeOwner?: Owner, controlOwner?: Owner, port?:number, editor?: boolean, root?: string, eveRoot?: string, internal?: boolean, initDB?:any}
+export interface Config {
+  path?:string,
+  runtimeOwner?: Owner,
+  controlOwner?: Owner,
+  port?:number,
+  editor?: boolean,
+  root?: string,
+  eveRoot?: string,
+  internal?: boolean,
+  mode?: Mode
+  initDB?:any
+}
 
 export var config:Config = {};
 
