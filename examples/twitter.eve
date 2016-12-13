@@ -41,8 +41,8 @@ sign the oauth request and add the signature field
      r = [#oauth-request method fields url key]
      not(r.fields.oauth_signature)
      lookup[record:r.fields attribute value]
-     ordinal = sort[value:attribute given:attribute]
-     sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[value:"{{attribute}}={{urlencode[text:value]}}" separator:"&" ordinal given:attribute]]}}"
+     index = sort[value:attribute given:attribute]
+     sig = "{{method}}&{{urlencode[text:url]}}&{{urlencode[text:join[token:"{{attribute}}={{urlencode[text:value]}}" with:"&" index given:attribute]]}}"
    commit
       fields.oauth_signature := sha1hmac[text:sig key]
 ~~~
@@ -51,8 +51,8 @@ add the header and send the request
 ~~~
   search k = [#oauth-request method url fields:[oauth_signature]]
      lookup[record:k.fields attribute value]
-     ordinal = sort[value:attribute given:attribute]
-     oauth-header = "OAuth {{join[value:"{{attribute}}=\"{{urlencode[text:value]}}\"" separator:", " ordinal given:attribute]}}"
+     index = sort[value:attribute given:attribute]
+     oauth-header = "OAuth {{join[token:"{{attribute}}=\"{{urlencode[text:value]}}\"" with:", " index given:attribute]}}"
   commit @http
      [#request #oauth-request url headers:[Authorization : oauth-header]]
 ~~~
@@ -62,14 +62,24 @@ get request status
   search @http
       [#request #oauth-request response]
       k = split[text:response.body by:"&"]
-      a = split[text:k by:"=" index:1]
-      v = split[text:k by:"=" index:2]
-
-  commit @browser-session
-      [#trag url:"www.github.com"]
-      z = [#zikky foo:response.body]
-      lookup[record:z attribute:a value:v]
+      attribute = split[text:k by:"=" index:1]
+      value = split[text:k by:"=" index:2]
+  commit
+      z = [#token]
+      lookup[record:z attribute value]
+commit @browser-session
+      p = [#zikky]
+      lookup[record:p attribute value]
 ~~~
+
+send login to browser
+~~~
+search
+   [#token oauth_token]
+commit @browser-session
+   [#trag url:"https://api.twitter.com/oauth/authenticate?oauth_token={{oauth_token}}"]
+~~~
+
 
 print a debugging div
 ~~~

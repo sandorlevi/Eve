@@ -15,9 +15,9 @@ export class HttpDatabase extends Database {
     console.log("Request", JSON.stringify(request))
     if(request.headers) {
       let headers = this.index.asObject(request.headers[0]);
-      console.log("headers", JSON.stringify(headers))     
+      console.log("headers", JSON.stringify(headers))
       for(let header in headers) {
-        console.log("header", JSON.stringify(header), JSON.stringify(options))           
+        console.log("header", JSON.stringify(header), JSON.stringify(options))
         options.headers[header] = headers[header];
       }
     }
@@ -42,6 +42,7 @@ export class HttpDatabase extends Database {
       changes.store(scope, requestId, "response", responseId, this.id);
       changes.store(scope, responseId, "tag", "response", this.id);
       if(response.headers["content-type"].indexOf("application/json") > -1) {
+        console.log("json input!")
         let id = eavs.fromJS(changes, JSON.parse(body), this.id, scope, `${responseId}|json`);
         changes.store(scope, responseId, "json", id, this.id);
       }
@@ -76,4 +77,3 @@ export class HttpDatabase extends Database {
     }
   }
 }
-
