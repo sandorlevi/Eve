@@ -52,7 +52,7 @@ class HTTPRuntimeClient extends RuntimeClient {
     let server = new ServerDatabase();
     const dbs = {
       "http": new HttpDatabase(),
-      "server": server,
+      "http-server": server,
       "shared": shared,
       "browser": new Database(),
       "init": initDatabase
@@ -354,4 +354,3 @@ export function run() {
 if(require.main === module) {
   console.error("Please run eve using the installed eve binary.");
 }
-
