@@ -32,6 +32,7 @@ export class ServerDatabase extends Database {
       new InsertAction("server|tag", requestId, "tag", "request", undefined, scopes),
       new InsertAction("server|url", requestId, "url", request.url, undefined, scopes),
     ];
+    console.log("request url", request.url)
     if(request.headers) {
       let headerId = `${requestId}|body`;
       for(let key of Object.keys(request.headers)) {
@@ -59,7 +60,7 @@ export class ServerDatabase extends Database {
   analyze(evaluation: Evaluation, db: Database) {
     for(let block of db.blocks) {
       for(let scan of block.parse.scanLike) {
-        if(scan.type === "record" && scan.scopes.indexOf("server") > -1) {
+        if(scan.type === "record" && scan.scopes.indexOf("http-server") > -1) {
           for(let attribute of scan.attributes) {
             if(attribute.attribute === "tag" && attribute.value.value === "request") {
               this.receiving = true;
