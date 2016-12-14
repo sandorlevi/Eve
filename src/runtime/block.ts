@@ -294,3 +294,24 @@ export class Block {
     return changes;
   }
 }
+
+
+export class RemoteBlock extends Block {
+  updateBinds(diff, changes) {
+    // no-op
+  }
+
+
+  execute(multiIndex: MultiIndex, changes: Changes) {
+    if(this.dormant) {
+      return changes;
+    } else if(this.singleRun) {
+      this.dormant = true;
+    }
+
+    // send stuff to the server
+    console.log("EXECUTING REMOVE BLOCK!");
+
+    return changes;
+  }
+}

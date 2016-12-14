@@ -64,7 +64,6 @@ test("Should be able to use the sin function with degrees and radians", (assert)
       [floatTest: x]
     ~~~
   `);
-  assert.end();
 })
 
 test("Should be able to use the cos function with degrees and radians", (assert) => {
@@ -87,7 +86,6 @@ test("Should be able to use the cos function with degrees and radians", (assert)
       [floatTest: x]
     ~~~
   `);
-  assert.end();
 })
 
 test("Should be able to use the tan function with degrees and radians", (assert) => {
@@ -110,7 +108,6 @@ test("Should be able to use the tan function with degrees and radians", (assert)
       [floatTest: x]
     ~~~
   `);
-  assert.end();
 })
 
 // Test inverse Trig
@@ -156,7 +153,6 @@ test("Test range", (assert) => {
       [result: x]
     ~~~
   `);
-  assert.end();
 })
 
 test("Test nested functions", (assert) => {
@@ -176,7 +172,6 @@ test("Test nested functions", (assert) => {
       [floatTest: x]
     ~~~
   `);
-  assert.end();
 })
 
 // Test Floor Function
@@ -247,7 +242,6 @@ test("Test that string concatenation is still working after NaN change.", (asser
       [result: x]
     ~~~
   `);
-  assert.end();
 });
 
 test("Divide by zero should return nothing.", (assert) => {
@@ -265,7 +259,6 @@ test("Divide by zero should return nothing.", (assert) => {
       [result: x]
     ~~~
   `);
-  assert.end();
 });
 
 test("Divide by zero in an if statement should be detectable.", (assert) => {
@@ -288,7 +281,6 @@ test("Divide by zero in an if statement should be detectable.", (assert) => {
       [result: x]
     ~~~
   `);
-  assert.end();
 });
 
 test("ACosh < 1 should return nothing.", (assert) => {
@@ -306,7 +298,6 @@ test("ACosh < 1 should return nothing.", (assert) => {
       [result: x]
     ~~~
   `);
-  assert.end();
 });
 
 test("ATanH < -1 and > 1 should return nothing.", (assert) => {
@@ -324,7 +315,6 @@ test("ATanH < -1 and > 1 should return nothing.", (assert) => {
       [result: x]
     ~~~
   `);
-  assert.end();
 });
 
 test("Test random seed", (assert) => {
@@ -350,7 +340,6 @@ test("Test random seed", (assert) => {
       [different-seed]
     ~~~
   `);
-  assert.end();
 })
 
 test("Test gaussian seed", (assert) => {
@@ -376,5 +365,4 @@ test("Test gaussian seed", (assert) => {
       [different-seed]
     ~~~
   `);
-  assert.end();
 })

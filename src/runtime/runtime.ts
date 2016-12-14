@@ -61,7 +61,7 @@ export class Database {
     if(commit.length === 0) return;
     for(let evaluation of this.evaluations) {
       if(evaluation !== currentEvaluation) {
-        evaluation.queue(commit);
+        evaluation.queue({type: QueuedType.commit, commit});
       }
     }
   }
@@ -77,19 +77,35 @@ export class Database {
 // Evaluation
 //---------------------------------------------------------------------
 
+type EvaluationCallback = (changes: Changes) => void;
+
+enum QueuedType {
+  commit,
+  actions,
+}
+
+interface QueuedEvaluation {
+  type: QueuedType,
+  commit?: any[],
+  actions?: Action[],
+  changes?: Changes,
+  callback?: EvaluationCallback,
+}
+
 export class Evaluation {
   queued: boolean;
-  commitQueue: any[];
+  evaluationQueue: QueuedEvaluation[];
   multiIndex: MultiIndex;
   databases: Database[];
   errorReporter: any;
   databaseNames: {[dbId: string]: string};
   nameToDatabase: {[name: string]: Database};
   perf: PerformanceTracker;
+  nextTick: (func) => void;
 
   constructor(index?) {
     this.queued = false;
-    this.commitQueue = [];
+    this.evaluationQueue = [];
     this.databases = [];
     this.databaseNames = {};
     this.nameToDatabase = {};
@@ -98,6 +114,13 @@ export class Evaluation {
       this.perf = new PerformanceTracker();
     } else {
       this.perf = new NoopPerformanceTracker();
+    }
+    if(typeof process !== "undefined") {
+      this.nextTick = process.nextTick;
+    } else {
+      this.nextTick = (func) => {
+        setTimeout(func, 0);
+      }
     }
   }
 
@@ -177,7 +200,6 @@ export class Evaluation {
     return blocks;
   }
 
-
   getAllBlocks() {
     let blocks = [];
     for(let database of this.databases) {
@@ -190,36 +212,47 @@ export class Evaluation {
     return blocks;
   }
 
-  queue(commit) {
-    if(!commit.length) return;
-    if(!this.queued) {
-      let self = this;
-      process.nextTick(() => {
+  processQueue() {
+    this.nextTick(() => {
+      if(this.evaluationQueue.length) {
         let commits = [];
-        for(let queued of self.commitQueue) {
-          for(let field of queued) {
+        let queued = this.evaluationQueue.shift();
+        if(queued.type === QueuedType.commit) {
+          for(let field of queued.commit) {
             commits.push(field);
           }
+          this.fixpoint(new Changes(this.multiIndex), this.blocksFromCommit(commits), queued.callback);
+        } else if(queued.type === QueuedType.actions) {
+          let {actions, changes, callback} = queued;
+          for(let action of actions) {
+            action.execute(this.multiIndex, [], changes);
+          }
+          let committed = changes.commit();
+          this.fixpoint(changes, this.blocksFromCommit(committed), callback);
         }
-        this.fixpoint(new Changes(this.multiIndex), this.blocksFromCommit(commits));
-      });
+        if(this.evaluationQueue.length) {
+          this.processQueue();
+        }
+      }
+    });
+  }
+
+  queue(evaluation: QueuedEvaluation) {
+    if(!this.queued) {
+      this.processQueue();
     }
-    this.commitQueue.push(commit);
+    this.evaluationQueue.push(evaluation);
   }
 
   createChanges() {
     return new Changes(this.multiIndex);
   }
 
-  executeActions(actions: Action[], changes = this.createChanges()) {
-    for(let action of actions) {
-      action.execute(this.multiIndex, [], changes);
-    }
-    let committed = changes.commit();
-    return this.fixpoint(changes, this.blocksFromCommit(committed));
+  executeActions(actions: Action[], changes = this.createChanges(), callback?: EvaluationCallback) {
+    this.queue({type: QueuedType.actions, actions, changes, callback});
   }
 
-  fixpoint(changes = new Changes(this.multiIndex), blocks = this.getAllBlocks()) {
+  fixpoint(changes = new Changes(this.multiIndex), blocks = this.getAllBlocks(), callback?: EvaluationCallback) {
     let perf = this.perf;
     let start = perf.time();
     let commit;
@@ -246,7 +279,9 @@ export class Evaluation {
     for(let database of this.databases) {
       database.onFixpoint(this, changes);
     }
-    return changes;
+    if(callback) {
+      callback(changes);
+    }
   }
 
   save() {

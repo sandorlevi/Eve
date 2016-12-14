@@ -71,10 +71,7 @@ export class HttpDatabase extends Database {
       }
     }
     if(actions.length) {
-      setTimeout(() => {
-        // console.log("actions", actions);
-        evaluation.executeActions(actions);
-      })
+      evaluation.executeActions(actions);
     }
   }
 }

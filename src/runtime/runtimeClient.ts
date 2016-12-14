@@ -193,54 +193,64 @@ export abstract class RuntimeClient {
     } else if(data.type === "tokenInfo") {
       let spans = [];
       let extraInfo = {};
-      analyzer.tokenInfo(this.evaluation, data.tokenId, spans, extraInfo)
-      this.send(JSON.stringify({type: "comments", spans, extraInfo}))
+      analyzer.tokenInfo(this.evaluation, data.tokenId, spans, extraInfo, () => {
+        this.send(JSON.stringify({type: "comments", spans, extraInfo}))
+      })
     } else if(data.type === "findNode") {
       let {recordId, node} = data;
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.nodeIdToRecord(this.evaluation, data.node, spans, extraInfo);
-      this.send(JSON.stringify({type: "findNode", recordId, spanId}));
+      analyzer.nodeIdToRecord(this.evaluation, data.node, spans, extraInfo, (spanId) => {
+        this.send(JSON.stringify({type: "findNode", recordId, spanId}));
+      });
     } else if(data.type === "findSource") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findSource(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findSource(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findRelated") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findRelated(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findRelated(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findValue") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findValue(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findValue(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findCardinality") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findCardinality(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findCardinality(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findAffector") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findAffector(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findAffector(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findFailure") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findFailure(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findFailure(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findRootDrawers") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findRootDrawers(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findRootDrawers(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findMaybeDrawers") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findMaybeDrawers(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findMaybeDrawers(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "findPerformance") {
       let perf = this.evaluation.perf;
       let userBlocks = {};
@@ -254,8 +264,9 @@ export abstract class RuntimeClient {
     } else if(data.type === "findRecordsFromToken") {
       let spans = [];
       let extraInfo = {};
-      let spanId = analyzer.findRecordsFromToken(this.evaluation, data, spans, extraInfo);
-      this.send(JSON.stringify(data));
+      analyzer.findRecordsFromToken(this.evaluation, data, spans, extraInfo, (info) => {
+        this.send(JSON.stringify(info));
+      });
     } else if(data.type === "dumpState") {
       let dbs = this.evaluation.save() as any;
       let code = this.lastParse.code;

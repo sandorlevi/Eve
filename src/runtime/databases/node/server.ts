@@ -98,13 +98,12 @@ export class ServerDatabase extends Database {
       }
     }
     if(actions.length) {
-      process.nextTick(() => {
-        evaluation.executeActions(actions);
+      evaluation.executeActions(actions, undefined, () => {
         // because this database is created per http request, we need to destroy this
         // evaluation once a response has been sent and we've dealt with any consequences
         // of the send.
         evaluation.close();
-      })
+      });
     }
   }
 }

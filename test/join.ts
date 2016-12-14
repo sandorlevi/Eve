@@ -14,7 +14,7 @@ test("create a record", (assert) => {
         [#person name: "chris"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search and create a record", (assert) => {
@@ -44,7 +44,7 @@ test("search and create a record", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with constant filter", (assert) => {
@@ -74,7 +74,7 @@ test("search with constant filter", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -104,7 +104,7 @@ test("search with constant attribute", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with attribute having multiple values", (assert) => {
@@ -134,7 +134,7 @@ test("search with attribute having multiple values", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with attribute having multiple values in parenthesis", (assert) => {
@@ -161,7 +161,7 @@ test("search with attribute having multiple values in parenthesis", (assert) => 
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with attribute having multiple values in parenthesis with a function", (assert) => {
@@ -188,10 +188,10 @@ test("search with attribute having multiple values in parenthesis with a functio
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
-test.only("sub-records in a parenthesis pick up their parent as part of their identity", (assert) => {
+test("sub-records in a parenthesis pick up their parent as part of their identity", (assert) => {
   let expected = {
     insert: [
       ["a", "tag", "person"],
@@ -245,7 +245,7 @@ test.only("sub-records in a parenthesis pick up their parent as part of their id
            [#div p children: ([#div text: "age"], [#div text: age])]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("create a record with numeric attributes", (assert) => {
@@ -265,7 +265,7 @@ test("create a record with numeric attributes", (assert) => {
         [#json-array 1: "cool" 2: "om nom" 3: "om nom nom"]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -294,7 +294,7 @@ test("search a record with numeric attributes", (assert) => {
         [| foo: "{{first}} - {{second}} - {{third}}"}]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with incompatible filters", (assert) => {
@@ -325,7 +325,7 @@ test("search with incompatible filters", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with unprovided variable", (assert) => {
@@ -354,7 +354,7 @@ test("search with unprovided variable", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with unprovided root in an attribute access", (assert) => {
@@ -384,7 +384,7 @@ test("search with unprovided root in an attribute access", (assert) => {
         [dude: p.name]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with escaped strings", (assert) => {
@@ -411,7 +411,7 @@ test("search with escaped strings", (assert) => {
         [info]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("search with escaped embeds", (assert) => {
@@ -437,7 +437,7 @@ test("search with escaped embeds", (assert) => {
         [info: "\\{{{name}}\\}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("setting an attribute", (assert) => {
@@ -467,7 +467,7 @@ test("setting an attribute", (assert) => {
         p.dude := name
     ~~~
   `);
-  assert.end();
+
 });
 
 test("setting an attribute to itself", (assert) => {
@@ -498,7 +498,7 @@ test("setting an attribute to itself", (assert) => {
         p.name := name
     ~~~
   `);
-  assert.end();
+
 });
 
 test("setting an attribute in multiple blocks", (assert) => {
@@ -531,7 +531,7 @@ test("setting an attribute in multiple blocks", (assert) => {
         p.meep := "maup"
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -566,7 +566,7 @@ test("setting an attribute to multiple values", (assert) => {
         p.dude := (name, "foo", 3)
     ~~~
   `);
-  assert.end();
+
 });
 
 test("merging multiple values into an attribute", (assert) => {
@@ -600,7 +600,7 @@ test("merging multiple values into an attribute", (assert) => {
         p <- [dude: (name, "foo", 3)]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("merges with subobjects pick up the parent object as part of their projection", (assert) => {
@@ -634,7 +634,7 @@ test("merges with subobjects pick up the parent object as part of their projecti
         p <- [foo: [#bar name]]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("creating an object with multiple values for an attribute", (assert) => {
@@ -670,16 +670,18 @@ test("creating an object with multiple values for an attribute", (assert) => {
         [#dude dude: (name, "foo", 3 + 5)]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("creating an object with multiple complex values for an attribute", (assert) => {
   let expected = {
     insert: [
-      ["2", "tag", "person"],
-      ["2", "name", "chris"],
+      ["4", "tag", "person"],
+      ["4", "name", "chris"],
       ["6", "tag", "foo"],
+      ["6", "eve-auto-index", 1],
       ["8", "tag", "bar"],
+      ["8", "eve-auto-index", 2],
       ["12","tag","dude"],
       ["12","dude","6"],
       ["12","dude","8"],
@@ -700,7 +702,7 @@ test("creating an object with multiple complex values for an attribute", (assert
         [#dude dude: ([#foo], [#bar])]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("setting an attribute on an object with multiple complex values", (assert) => {
@@ -729,7 +731,7 @@ test("setting an attribute on an object with multiple complex values", (assert) 
         p.dude := ([#foo], [#bar])
     ~~~
   `);
-  assert.end();
+
 });
 
 test("merging an attribute on an object with multiple complex values", (assert) => {
@@ -760,7 +762,7 @@ test("merging an attribute on an object with multiple complex values", (assert) 
         p <- [dude: [#foo] [#bar]]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("setting an attribute that removes a previous value", (assert) => {
@@ -787,7 +789,7 @@ test("setting an attribute that removes a previous value", (assert) => {
         p.dude := name
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -814,13 +816,13 @@ test("setting an attribute on click", (assert) => {
       commit
         p.dude := name
     ~~~
-  `);
+  `, undefined, false);
   let expected2 = {
     insert: [ ["3", "dude", "chris"], ["click-event", "tag", "click"] ],
     remove: [ ["3", "dude", "joe"], ]
   };
   eve.execute(expected2, [new InsertAction("blah", "click-event", "tag", "click")]);
-  assert.end();
+
 });
 
 
@@ -845,7 +847,7 @@ test("erase a record", (assert) => {
         p := none
     ~~~
   `);
-  assert.end();
+
 });
 
 test("erase an attribute", (assert) => {
@@ -870,7 +872,7 @@ test("erase an attribute", (assert) => {
         p.age := none
     ~~~
   `);
-  assert.end();
+
 });
 
 test("sum constant", (assert) => {
@@ -902,7 +904,7 @@ test("sum constant", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("sum variable", (assert) => {
@@ -936,7 +938,7 @@ test("sum variable", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("sum variable with multiple givens", (assert) => {
@@ -970,7 +972,7 @@ test("sum variable with multiple givens", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("sum groups", (assert) => {
@@ -1010,7 +1012,7 @@ test("sum groups", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("sum groups with multiple pers", (assert) => {
@@ -1050,7 +1052,7 @@ test("sum groups with multiple pers", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1083,7 +1085,7 @@ test("aggregate stratification", (assert) => {
         [#total total]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1117,7 +1119,7 @@ test("aggregate stratification with results", (assert) => {
         [#total total: total-plus-10]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("aggregate stratification result joined with an object", (assert) => {
@@ -1152,7 +1154,7 @@ test("aggregate stratification result joined with an object", (assert) => {
         [#success]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("aggregate stratification result fails to join with an object", (assert) => {
@@ -1186,7 +1188,7 @@ test("aggregate stratification result fails to join with an object", (assert) =>
         [#success]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("aggregate stratification with another aggregate", (assert) => {
@@ -1225,7 +1227,7 @@ test("aggregate stratification with another aggregate", (assert) => {
         [#total total: count-all]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1274,7 +1276,7 @@ test("single argument is", (assert) => {
         [#result result result2]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("multiple argument is", (assert) => {
@@ -1292,7 +1294,7 @@ test("multiple argument is", (assert) => {
         [#result result result2]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1320,7 +1322,7 @@ test("block order shouldn't matter", (assert) => {
       commit
         [#foo value: "hi!"]
     ~~~
-  `);
+  `, undefined, false);
   let expected2 = {
     insert: [
       ["10|bye!", "tag", "result"],  ["10|bye!", "result", "bye!"],
@@ -1345,7 +1347,7 @@ test("block order shouldn't matter", (assert) => {
         [#result result]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1375,7 +1377,7 @@ test("if with variable", (assert) => {
     ~~~
 
   `);
-  assert.end();
+
 });
 
 test("else with value", (assert) => {
@@ -1393,7 +1395,7 @@ test("else with value", (assert) => {
         [#result result]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("if with constant equality", (assert) => {
@@ -1422,7 +1424,7 @@ test("if with constant equality", (assert) => {
         [#result result]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("if with an aggregate", (assert) => {
@@ -1450,7 +1452,7 @@ test("if with an aggregate", (assert) => {
         [#result result]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("if with an external equality", (assert) => {
@@ -1479,7 +1481,7 @@ test("if with an external equality", (assert) => {
         [#result result]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("bind adds results", (assert) => {
@@ -1505,7 +1507,7 @@ test("bind adds results", (assert) => {
         [#result value]
     ~~~
   `);
-  assert.end();
+
 });
 
 
@@ -1533,7 +1535,7 @@ test("bind removes dead results", (assert) => {
       bind
         [#result value]
     ~~~
-  `);
+  `, undefined, false);
   let expected2 = {
     insert: [],
     remove: [
@@ -1552,7 +1554,7 @@ test("bind removes dead results", (assert) => {
       foo := none
     ~~~
   `, eve.session);
-  assert.end();
+
 });
 
 
@@ -1583,7 +1585,7 @@ test("you only search facts in the specified database", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -1615,7 +1617,7 @@ test("you can search from multiple databases", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("writing is scoped to databases", (assert) => {
@@ -1645,7 +1647,7 @@ test("writing is scoped to databases", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("you can write into multiple databases", (assert) => {
@@ -1679,7 +1681,7 @@ test("you can write into multiple databases", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("reading in a scoped write uses the search scope", (assert) => {
@@ -1709,7 +1711,7 @@ test("reading in a scoped write uses the search scope", (assert) => {
         [dude: p.name]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("reading in multiple scopes write uses the search scope", (assert) => {
@@ -1744,7 +1746,7 @@ test("reading in multiple scopes write uses the search scope", (assert) => {
         [dude: p.name]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("scoped attribute mutators pick up the search scope", (assert) => {
@@ -1773,7 +1775,7 @@ test("scoped attribute mutators pick up the search scope", (assert) => {
         p.brother.name := "meep"
     ~~~
   `);
-  assert.end();
+
 })
 
 test("multi-level attribute accesses", (assert) => {
@@ -1804,7 +1806,7 @@ test("multi-level attribute accesses", (assert) => {
         [#dude dude: p2.name]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("split function", (assert) => {
@@ -1824,7 +1826,7 @@ test("split function", (assert) => {
         [dude: token]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -1848,7 +1850,7 @@ test("split function with multiple returns", (assert) => {
         [dude: token, index]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -1872,7 +1874,7 @@ test("split function with attribute returns", (assert) => {
         [dude: token, index]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("split function with fixed return", (assert) => {
@@ -1891,7 +1893,7 @@ test("split function with fixed return", (assert) => {
         [dude: token, index: 2]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("split function with fixed return attribute", (assert) => {
@@ -1910,7 +1912,7 @@ test("split function with fixed return attribute", (assert) => {
         [dude: token, index: 2]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("split function with fixed token", (assert) => {
@@ -1929,7 +1931,7 @@ test("split function with fixed token", (assert) => {
         [dude: "bar", index]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -1949,7 +1951,7 @@ test("split function with both fixed", (assert) => {
         [dude: "bar", index: 2]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("pipe allows you to select ", (assert) => {
@@ -1981,7 +1983,7 @@ test("pipe allows you to select ", (assert) => {
         [dude: p | name]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("blank lookup errors", (assert) => {
@@ -1996,7 +1998,7 @@ test("blank lookup errors", (assert) => {
         lookup[]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup with bound record", (assert) => {
@@ -2023,7 +2025,7 @@ test("lookup with bound record", (assert) => {
         [| info: "Has {{attribute}} with value {{value}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2051,7 +2053,7 @@ test("lookup with bound attribute", (assert) => {
         [| record value]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup with free attribute, node and bound value", (assert) => {
@@ -2079,7 +2081,7 @@ test("lookup with free attribute, node and bound value", (assert) => {
         [| record attribute]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup on node", (assert) => {
@@ -2107,7 +2109,7 @@ test("lookup on node", (assert) => {
         [| record attribute value]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup all free", (assert) => {
@@ -2140,7 +2142,7 @@ test("lookup all free", (assert) => {
         [| record attribute value node]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("lookup action", (assert) => {
@@ -2168,7 +2170,7 @@ test("lookup action", (assert) => {
         lookup[record, attribute, value]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup action without value errors", (assert) => {
@@ -2196,7 +2198,7 @@ test("lookup action without value errors", (assert) => {
         lookup[record, attribute]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2223,7 +2225,7 @@ test("lookup action remove", (assert) => {
         lookup[record, attribute, value] := none
     ~~~
   `);
-  assert.end();
+
 })
 
 test("lookup action remove free value", (assert) => {
@@ -2248,7 +2250,7 @@ test("lookup action remove free value", (assert) => {
         lookup[record, attribute] := none
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2281,7 +2283,7 @@ test("an identifier followed by whitespace should not be interpreted as a functi
         [#cool]
     ~~~
   `);
-  assert.end();
+
 });
 
 test("indented code blocks are not evaled", (assert) => {
@@ -2304,7 +2306,7 @@ test("indented code blocks are not evaled", (assert) => {
         [#cool]
     ~~~
   `);
-  assert.end();
+
   })
 
 test("single value sort", (assert) => {
@@ -2339,7 +2341,7 @@ test("single value sort", (assert) => {
         [dude: "{{ix}} {{name}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("multi value sort", (assert) => {
@@ -2377,7 +2379,7 @@ test("multi value sort", (assert) => {
         [dude: "{{ix}} {{name}} {{age}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("multi value sort with multiple directions", (assert) => {
@@ -2415,7 +2417,7 @@ test("multi value sort with multiple directions", (assert) => {
         [dude: "{{ix}} {{name}} {{age}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("sort with group", (assert) => {
@@ -2453,7 +2455,7 @@ test("sort with group", (assert) => {
         [dude: "{{ix}} {{name}} {{age}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("if with expression-only arguments", (assert) => {
@@ -2474,7 +2476,7 @@ test("if with expression-only arguments", (assert) => {
       [#div text]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("multiple inequalities in a row", (assert) => {
@@ -2506,7 +2508,7 @@ test("multiple inequalities in a row", (assert) => {
         [dude: p]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("range positive increment", (assert) => {
@@ -2528,7 +2530,7 @@ test("range positive increment", (assert) => {
         [| dude: i]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("range negative increment", (assert) => {
@@ -2550,7 +2552,7 @@ test("range negative increment", (assert) => {
         [| dude: i]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("range increment on an edge boundary", (assert) => {
@@ -2569,7 +2571,7 @@ test("range increment on an edge boundary", (assert) => {
         [| dude: i]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("range with a single increment", (assert) => {
@@ -2587,7 +2589,7 @@ test("range with a single increment", (assert) => {
         [| dude: i]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("range with infinite increment", (assert) => {
@@ -2603,7 +2605,7 @@ test("range with infinite increment", (assert) => {
         [| dude: i]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("accessing the same attribute sequence natural joins instead of product joining", (assert) => {
@@ -2663,7 +2665,7 @@ test("accessing the same attribute sequence natural joins instead of product joi
       [#div convos | text: "{{convos.messages.sender.name}} - {{convos.messages.text}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("not with no external dependencies", (assert) => {
@@ -2678,7 +2680,7 @@ test("not with no external dependencies", (assert) => {
     commit @browser
       [#success]
     ~~~
-  `);
+  `, undefined, false);
   expected = {
     insert: [
       ["3", "tag", "success"],
@@ -2693,7 +2695,7 @@ test("not with no external dependencies", (assert) => {
       [#success]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2712,7 +2714,7 @@ test("not can't provide a variable for an attribute access", (assert) => {
       [#foo foo]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("not without dependencies filters correctly", (assert) => {
@@ -2734,7 +2736,7 @@ test("not without dependencies filters correctly", (assert) => {
       [#bar]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2761,7 +2763,7 @@ test("indirect constant equality in if", (assert) => {
         [#div text: "{{x}} is {{value}}"]
     ~~~
   `);
-  assert.end();
+
 })
 
 
@@ -2784,7 +2786,7 @@ test("constant filter in if", (assert) => {
         [#div text: x]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("nested if/not expressions correctly get their args set", (assert) => {
@@ -2819,7 +2821,7 @@ test("nested if/not expressions correctly get their args set", (assert) => {
       [#item idx: 1]
     ~~~
   `);
-  assert.end();
+
 })
 
 test("interdependent aggregates are appropriately stratified", (assert) => {
@@ -2861,5 +2863,5 @@ test("interdependent aggregates are appropriately stratified", (assert) => {
     ~~~
 
   `);
-  assert.end();
+
 })

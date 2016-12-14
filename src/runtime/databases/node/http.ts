@@ -68,9 +68,7 @@ export class HttpDatabase extends Database {
       }
     }
     if(actions.length) {
-      process.nextTick(() => {
-        evaluation.executeActions(actions);
-      })
+      evaluation.executeActions(actions);
     }
   }
 }

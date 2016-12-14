@@ -399,21 +399,20 @@ export function analyze(blocks: ParseBlock[], spans: any[], extraInfo: any) {
   let editorDb = new EditorDatabase(spans, extraInfo);
   eve.unregisterDatabase("editor");
   eve.registerDatabase("editor", editorDb);
-  eve.fixpoint();
-  let changes = eve.createChanges();
-  let analysis = new Analysis(changes);
-  for(let block of blocks) {
-    analysis.block(block, spans, extraInfo);
-  }
-  changes.commit();
-  // console.log(changes);
-  console.timeEnd("load analysis");
-  // eve.executeActions([], changes);
+  eve.fixpoint(undefined, undefined, () => {
+    let changes = eve.createChanges();
+    let analysis = new Analysis(changes);
+    for(let block of blocks) {
+      analysis.block(block, spans, extraInfo);
+    }
+    changes.commit();
+    console.timeEnd("load analysis");
+  });
 }
 
 
 let prevQuery;
-function doQuery(queryId, query, spans, extraInfo) {
+function doQuery(queryId, query, spans, extraInfo, callback) {
   eve = makeEveAnalyzer();
   let editorDb = new EditorDatabase(spans, extraInfo);
   eve.unregisterDatabase("editor");
@@ -423,182 +422,184 @@ function doQuery(queryId, query, spans, extraInfo) {
     changes.unstoreObject(prevQuery.queryId, prevQuery.query, "analyzer", "session");
   }
   changes.storeObject(queryId, query, "analyzer", "session");
-  eve.executeActions([], changes);
+  eve.executeActions([], changes, () => { callback(eve) });
   prevQuery = {queryId, query};
   return eve;
 }
 
-export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[], extraInfo: any) {
+export function tokenInfo(evaluation: Evaluation, tokenId: string, spans: any[], extraInfo: any, callback: () => void) {
   let queryId = `query|${tokenId}`;
   let query = {tag: "query", token: tokenId};
-  let eve = doQuery(queryId, query, spans, extraInfo);
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    // look at the results and find out which action node we were looking
+    // at
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "query");
+    let evSession = evaluation.getDatabase("session");
+    if(queryInfo) {
+      for(let entity of Object.keys(queryInfo.index)) {
+        let info = sessionIndex.asObject(entity);
 
-  // look at the results and find out which action node we were looking
-  // at
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "query");
-  let evSession = evaluation.getDatabase("session");
-  if(queryInfo) {
-    for(let entity of Object.keys(queryInfo.index)) {
-      let info = sessionIndex.asObject(entity);
-
-      console.log("INFO", info);
-      // why is this failing?
-      let nodeArray = info.scan || info.action;
-      if(nodeArray) {
-        let node = sessionIndex.asObject(nodeArray[0]);
-        let blockId = node["block"][0];
-        let found;
-        for(let block of evSession.blocks) {
-          console.log("BLOCK ID", block.id, node["block"]);
-          if(block.id === blockId) {
-            found = block;
-            break;
+        console.log("INFO", info);
+        // why is this failing?
+        let nodeArray = info.scan || info.action;
+        if(nodeArray) {
+          let node = sessionIndex.asObject(nodeArray[0]);
+          let blockId = node["block"][0];
+          let found;
+          for(let block of evSession.blocks) {
+            console.log("BLOCK ID", block.id, node["block"]);
+            if(block.id === blockId) {
+              found = block;
+              break;
+            }
           }
+          console.log("NODE BLOCK", blockId, found);
+          console.log("FAILING SCAN", blockToFailingScan(found));
+          console.log("CARDINALITIES", resultsToCardinalities(found.results))
+          console.log("SPECIFIC ROWS", findResultRows(found.results, 2, "cherry"))
         }
-        console.log("NODE BLOCK", blockId, found);
-        console.log("FAILING SCAN", blockToFailingScan(found));
-        console.log("CARDINALITIES", resultsToCardinalities(found.results))
-        console.log("SPECIFIC ROWS", findResultRows(found.results, 2, "cherry"))
-      }
 
-      // look for the facts that action creates
-      if(info.action) {
-        for(let actionId of info.action) {
-          let action = sessionIndex.asObject(actionId);
-          let evIndex = evaluation.getDatabase(action.scopes[0]).index;
-          let nodeItems = evIndex.nodeLookup(action["build-node"][0]);
-          if(nodeItems) {
-            console.log("ACTION", action["build-node"][0]);
-            console.log(evIndex.toTriples(false, nodeItems.index));
+        // look for the facts that action creates
+        if(info.action) {
+          for(let actionId of info.action) {
+            let action = sessionIndex.asObject(actionId);
+            let evIndex = evaluation.getDatabase(action.scopes[0]).index;
+            let nodeItems = evIndex.nodeLookup(action["build-node"][0]);
+            if(nodeItems) {
+              console.log("ACTION", action["build-node"][0]);
+              console.log(evIndex.toTriples(false, nodeItems.index));
+            }
           }
         }
       }
     }
-  }
+  });
+
 }
 
-export function findCardinality(evaluation: Evaluation, info: any, spans: any[], extraInfo: any) {
+export function findCardinality(evaluation: Evaluation, info: any, spans: any[], extraInfo: any, callback) {
   let queryId = `query|${info.requestId}`;
   let query = {tag: ["query", "findCardinality"], token: info.variable};
-  let eve = doQuery(queryId, query, spans, extraInfo);
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    let sessionIndex = eve.getDatabase("session").index;
+    let evSession = evaluation.getDatabase("session");
+    let lookup = {};
+    let blockId;
+    let cardinalities;
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let evSession = evaluation.getDatabase("session");
-  let lookup = {};
-  let blockId;
-  let cardinalities;
-
-  let queryInfo = sessionIndex.alookup("tag", "query");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(obj.register) {
-      for(let variable of obj.register) {
-        let varObj = sessionIndex.asObject(variable);
-        if(varObj) {
-          if(!blockId) {
-            let found;
-            blockId = varObj.block[0];
-            for(let block of evSession.blocks) {
-              if(block.id === blockId) {
-                found = block;
-                break;
+    let queryInfo = sessionIndex.alookup("tag", "query");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(obj.register) {
+        for(let variable of obj.register) {
+          let varObj = sessionIndex.asObject(variable);
+          if(varObj) {
+            if(!blockId) {
+              let found;
+              blockId = varObj.block[0];
+              for(let block of evSession.blocks) {
+                if(block.id === blockId) {
+                  found = block;
+                  break;
+                }
               }
+              cardinalities = resultsToCardinalities(found.results);
             }
-            cardinalities = resultsToCardinalities(found.results);
+            lookup[varObj.token[0]] = cardinalities[varObj.register[0]].cardinality;
           }
-          lookup[varObj.token[0]] = cardinalities[varObj.register[0]].cardinality;
         }
       }
     }
-  }
-  info.cardinality = lookup;
-  return info;
+    info.cardinality = lookup;
+    callback(info);
+  });
 }
 
-export function findValue(evaluation: Evaluation, info: any, spans: any[], extraInfo: any) {
+export function findValue(evaluation: Evaluation, info: any, spans: any[], extraInfo: any, callback) {
   let queryId = `query|${info.requestId}`;
   let query = {tag: ["query", "findValue"], token: info.variable};
-  let eve = doQuery(queryId, query, spans, extraInfo);
+  doQuery(queryId, query, spans, extraInfo, () => {
+    let sessionIndex = eve.getDatabase("session").index;
+    let evSession = evaluation.getDatabase("session");
+    let lookup = {};
+    let blockId, found;
+    let rows = [];
+    let varToRegister = {};
+    let names = {};
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let evSession = evaluation.getDatabase("session");
-  let lookup = {};
-  let blockId, found;
-  let rows = [];
-  let varToRegister = {};
-  let names = {};
-
-  let queryInfo = sessionIndex.alookup("tag", "query");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(obj.register) {
-      for(let variable of obj.register) {
-        let varObj = sessionIndex.asObject(variable);
-        if(varObj) {
-          if(!blockId) {
-            blockId = varObj.block[0];
-            for(let block of evSession.blocks) {
-              if(block.id === blockId) {
-                found = block;
-                break;
+    let queryInfo = sessionIndex.alookup("tag", "query");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(obj.register) {
+        for(let variable of obj.register) {
+          let varObj = sessionIndex.asObject(variable);
+          if(varObj) {
+            if(!blockId) {
+              blockId = varObj.block[0];
+              for(let block of evSession.blocks) {
+                if(block.id === blockId) {
+                  found = block;
+                  break;
+                }
               }
             }
-          }
-          if(varObj.attribute) {
-            for(let attribute of varObj.attribute) {
-              varToRegister[attribute] = varObj.register[0];
+            if(varObj.attribute) {
+              for(let attribute of varObj.attribute) {
+                varToRegister[attribute] = varObj.register[0];
+              }
             }
+            lookup[varObj.token[0]] = varObj.register[0];
+            names[varObj.token[0]] = varObj.name[0];
           }
-          lookup[varObj.token[0]] = varObj.register[0];
-          names[varObj.token[0]] = varObj.name[0];
         }
       }
     }
-  }
-  if(info.given) {
-    let keys = Object.keys(info.given);
-    let registers = [];
-    let registerValues = [];
-    for(let key of keys) {
-      let reg = varToRegister[key];
-      if(reg !== undefined && registers.indexOf(reg) === -1) {
-        registers.push(reg);
-        registerValues.push(info.given[key][0]);
+    if(info.given) {
+      let keys = Object.keys(info.given);
+      let registers = [];
+      let registerValues = [];
+      for(let key of keys) {
+        let reg = varToRegister[key];
+        if(reg !== undefined && registers.indexOf(reg) === -1) {
+          registers.push(reg);
+          registerValues.push(info.given[key][0]);
+        }
       }
+      rows = findResultRows(found.results, registers, registerValues);
+    } else {
+      rows = found.results;
     }
-    rows = findResultRows(found.results, registers, registerValues);
-  } else {
-    rows = found.results;
-  }
-  info.rows = rows.slice(0,100);
-  info.totalRows = rows.length;
-  info.variableMappings = lookup;
-  info.variableNames = names;
-  return info;
+    info.rows = rows.slice(0,100);
+    info.totalRows = rows.length;
+    info.variableMappings = lookup;
+    info.variableNames = names;
+    callback(info);
+
+  });
 }
 
 
-export function nodeIdToRecord(evaluation, nodeId, spans, extraInfo) {
+export function nodeIdToRecord(evaluation, nodeId, spans, extraInfo, callback) {
   let queryId = `query|${nodeId}`;
   let query = {tag: "query", "build-node": nodeId};
-  let eve = doQuery(queryId, query, spans, extraInfo);
-
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "query");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(obj.pattern) {
-      return obj.pattern[0]
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "query");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(obj.pattern) {
+        callback(obj.pattern[0]);
+      }
     }
-  }
-  return;
+    callback();
+  });
 }
 
-export function findRecordsFromToken(evaluation, info, spans, extraInfo) {
+export function findRecordsFromToken(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query: any = {tag: ["findRecordsFromToken"]};
   if(info.token) query.token = info.token;
@@ -609,30 +610,33 @@ export function findRecordsFromToken(evaluation, info, spans, extraInfo) {
   evBrowser.nonExecuting = true;
   eve.registerDatabase("evaluation-session", evSession);
   eve.registerDatabase("evaluation-browser", evBrowser);
-  doQuery(queryId, query, spans, extraInfo);
-  eve.unregisterDatabase("evaluation-session");
-  eve.unregisterDatabase("evaluation-browser");
-  evSession.nonExecuting = false;
-  evBrowser.nonExecuting = false;
+  doQuery(queryId, query, spans, extraInfo, () => {
+    eve.unregisterDatabase("evaluation-session");
+    eve.unregisterDatabase("evaluation-browser");
+    evSession.nonExecuting = false;
+    evBrowser.nonExecuting = false;
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findRecordsFromToken");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    console.log("FIND RECORDS", obj);
-    if(obj.record) {
-      return info.record = obj.record;
-    } else {
-      info.record = [];
-      return info;
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findRecordsFromToken");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      console.log("FIND RECORDS", obj);
+      if(obj.record) {
+        info.record = obj.record;
+        callback(info)
+      } else {
+        info.record = [];
+        callback(info);
+      }
     }
-  }
-  return;
+    callback();
+
+  });
 }
 
 
-export function findSource(evaluation, info, spans, extraInfo) {
+export function findSource(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query: any = {tag: ["query", "findSource"]};
   if(info.record) query.recordId = info.record;
@@ -645,34 +649,36 @@ export function findSource(evaluation, info, spans, extraInfo) {
   evBrowser.nonExecuting = true;
   eve.registerDatabase("evaluation-session", evSession);
   eve.registerDatabase("evaluation-browser", evBrowser);
-  doQuery(queryId, query, spans, extraInfo);
-  eve.unregisterDatabase("evaluation-session");
-  eve.unregisterDatabase("evaluation-browser");
-  evSession.nonExecuting = false;
-  evBrowser.nonExecuting = false;
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    eve.unregisterDatabase("evaluation-session");
+    eve.unregisterDatabase("evaluation-browser");
+    evSession.nonExecuting = false;
+    evBrowser.nonExecuting = false;
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findSource");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    console.log("FIND SOURCE", obj);
-    if(obj.source) {
-      info.source = obj.source.map((source) => sessionIndex.asObject(source, false, true));
-      return info;
-    } else if(obj.block) {
-      info.block = obj.block;
-      return info;
-    } else {
-      info.block = [];
-      info.source = [];
-      return info;
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findSource");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      console.log("FIND SOURCE", obj);
+      if(obj.source) {
+        info.source = obj.source.map((source) => sessionIndex.asObject(source, false, true));
+        callback(info);
+      } else if(obj.block) {
+        info.block = obj.block;
+        callback(info);
+      } else {
+        info.block = [];
+        info.source = [];
+        callback(info);
+      }
     }
-  }
-  return;
+    callback();
+
+  });
 }
 
-export function findRelated(evaluation, info, spans, extraInfo) {
+export function findRelated(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query: any = {tag: ["query", "findRelated"]};
   let queryType;
@@ -688,28 +694,30 @@ export function findRelated(evaluation, info, spans, extraInfo) {
 
   let evSession = evaluation.getDatabase("session");
   eve.registerDatabase("evaluation-session", evSession);
-  doQuery(queryId, query, spans, extraInfo);
-  eve.unregisterDatabase("evaluation-session");
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    eve.unregisterDatabase("evaluation-session");
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findRelated");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(queryType === "span" && obj.variable) {
-      info.variable = obj.variable;
-    } else if(queryType === "variable" && obj.span) {
-      info.span = obj.span;
-    } else {
-      info.variable = [];
-      info.span = [];
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findRelated");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(queryType === "span" && obj.variable) {
+        info.variable = obj.variable;
+      } else if(queryType === "variable" && obj.span) {
+        info.span = obj.span;
+      } else {
+        info.variable = [];
+        info.span = [];
+      }
+      callback(info);
     }
-    return info;
-  }
-  return;
+    callback();
+
+  });
 }
 
-export function findAffector(evaluation, info, spans, extraInfo) {
+export function findAffector(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query: any = {tag: ["query", "findAffector"]};
   if(info.record) query.recordId = info.record;
@@ -722,30 +730,32 @@ export function findAffector(evaluation, info, spans, extraInfo) {
   evBrowser.nonExecuting = true;
   eve.registerDatabase("evaluation-session", evSession);
   eve.registerDatabase("evaluation-browser", evBrowser);
-  doQuery(queryId, query, spans, extraInfo);
-  eve.unregisterDatabase("evaluation-session");
-  eve.unregisterDatabase("evaluation-browser");
-  evSession.nonExecuting = false;
-  evBrowser.nonExecuting = false;
+  doQuery(queryId, query, spans, extraInfo, (eve) => {
+    eve.unregisterDatabase("evaluation-session");
+    eve.unregisterDatabase("evaluation-browser");
+    evSession.nonExecuting = false;
+    evBrowser.nonExecuting = false;
 
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findAffector");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    console.log("FIND AFFECTOR", obj);
-    if(obj.affector) {
-      info.affector = obj.affector.map((affector) => sessionIndex.asObject(affector, false, true));
-      return info;
-    } else {
-      info.affector = [];
-      return info;
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findAffector");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      console.log("FIND AFFECTOR", obj);
+      if(obj.affector) {
+        info.affector = obj.affector.map((affector) => sessionIndex.asObject(affector, false, true));
+        callback(info);
+      } else {
+        info.affector = [];
+        callback(info);
+      }
     }
-  }
-  return;
+    callback();
+
+  });
 }
 
-export function findFailure(evaluation, info, spans, extraInfo) {
+export function findFailure(evaluation, info, spans, extraInfo, callback) {
   let evSession = evaluation.getDatabase("session");
   let failingSpans = info.span = [];
   let sessionIndex = eve.getDatabase("session").index;
@@ -769,45 +779,45 @@ export function findFailure(evaluation, info, spans, extraInfo) {
       }
     }
   }
-  return info;
+  callback(info);
 }
 
-export function findRootDrawers(evaluation, info, spans, extraInfo) {
+export function findRootDrawers(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query = {tag: "findRootDrawers"};
-  let eve = doQuery(queryId, query, spans, extraInfo);
-
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findRootDrawers");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(obj.drawer) {
-      info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
-    } else {
-      info.drawers = [];
+  let eve = doQuery(queryId, query, spans, extraInfo, (eve) => {
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findRootDrawers");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(obj.drawer) {
+        info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
+      } else {
+        info.drawers = [];
+      }
     }
-  }
-  return info;
+    callback(info);
+  });
 }
 
-export function findMaybeDrawers(evaluation, info, spans, extraInfo) {
+export function findMaybeDrawers(evaluation, info, spans, extraInfo, callback) {
   let queryId = `query|${info.requestId}`;
   let query = {tag: "findMaybeDrawers"};
-  let eve = doQuery(queryId, query, spans, extraInfo);
-
-  let sessionIndex = eve.getDatabase("session").index;
-  let queryInfo = sessionIndex.alookup("tag", "findMaybeDrawers");
-  if(queryInfo) {
-    let [entity] = queryInfo.toValues();
-    let obj = sessionIndex.asObject(entity);
-    if(obj.drawer) {
-      info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
-    } else {
-      info.drawers = [];
+  let eve = doQuery(queryId, query, spans, extraInfo, (eve) => {
+    let sessionIndex = eve.getDatabase("session").index;
+    let queryInfo = sessionIndex.alookup("tag", "findMaybeDrawers");
+    if(queryInfo) {
+      let [entity] = queryInfo.toValues();
+      let obj = sessionIndex.asObject(entity);
+      if(obj.drawer) {
+        info.drawers = obj.drawer.map((id) => sessionIndex.asObject(id, false, true));
+      } else {
+        info.drawers = [];
+      }
     }
-  }
-  return info;
+    callback(info);
+  });
 }
 
 
