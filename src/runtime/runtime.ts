@@ -13,7 +13,7 @@ const MAX_ROUNDS = 300;
 
 import {} from "./join"
 import {MultiIndex, TripleIndex} from "./indexes"
-import {Block} from "./block"
+import {Block, RemoteBlock} from "./block"
 import {Changes} from "./changes"
 import {Action} from "./actions"
 import {ids} from "./id";
@@ -82,6 +82,7 @@ type EvaluationCallback = (changes: Changes) => void;
 enum QueuedType {
   commit,
   actions,
+  changes,
 }
 
 interface QueuedEvaluation {
@@ -90,10 +91,14 @@ interface QueuedEvaluation {
   actions?: Action[],
   changes?: Changes,
   callback?: EvaluationCallback,
+  waitingFor?: {[key: string]: boolean},
+  waitingCount?: number,
+  start?: number,
 }
 
 export class Evaluation {
   queued: boolean;
+  currentEvaluation: QueuedEvaluation;
   evaluationQueue: QueuedEvaluation[];
   multiIndex: MultiIndex;
   databases: Database[];
@@ -217,30 +222,37 @@ export class Evaluation {
       if(this.evaluationQueue.length) {
         let commits = [];
         let queued = this.evaluationQueue.shift();
+        let finished = (changes) => {
+          if(this.evaluationQueue.length) {
+            this.processQueue();
+          } else {
+            this.queued = false;
+          }
+          if(queued.callback) queued.callback(changes);
+        }
         if(queued.type === QueuedType.commit) {
           for(let field of queued.commit) {
             commits.push(field);
           }
-          this.fixpoint(new Changes(this.multiIndex), this.blocksFromCommit(commits), queued.callback);
+          this.fixpoint(new Changes(this.multiIndex), this.blocksFromCommit(commits), finished);
         } else if(queued.type === QueuedType.actions) {
           let {actions, changes, callback} = queued;
           for(let action of actions) {
             action.execute(this.multiIndex, [], changes);
           }
           let committed = changes.commit();
-          this.fixpoint(changes, this.blocksFromCommit(committed), callback);
-        }
-        if(this.evaluationQueue.length) {
-          this.processQueue();
+          this.fixpoint(changes, this.blocksFromCommit(committed), finished);
         }
       }
     });
   }
 
   queue(evaluation: QueuedEvaluation) {
-    if(!this.queued) {
+    if(!this.queued && !this.currentEvaluation) {
       this.processQueue();
     }
+    evaluation.waitingFor = {};
+    evaluation.waitingCount = 0;
     this.evaluationQueue.push(evaluation);
   }
 
@@ -252,36 +264,67 @@ export class Evaluation {
     this.queue({type: QueuedType.actions, actions, changes, callback});
   }
 
-  fixpoint(changes = new Changes(this.multiIndex), blocks = this.getAllBlocks(), callback?: EvaluationCallback) {
+  _fixpointRound(evaluation: QueuedEvaluation, blocks) {
     let perf = this.perf;
-    let start = perf.time();
-    let commit;
-    changes.changed = true;
-    while(changes.changed && changes.round < MAX_ROUNDS) {
+    let {changes} = evaluation;
+    evaluation.waitingCount = 0;
+    if(changes.changed && changes.round < MAX_ROUNDS) {
       changes.nextRound();
       // console.groupCollapsed("Round" + changes.round);
       for(let block of blocks) {
+        if(block instanceof RemoteBlock) {
+          evaluation.waitingFor[block.id] = true;
+          evaluation.waitingCount++;
+        }
         let start = perf.time();
         block.execute(this.multiIndex, changes);
         perf.block(block.id, start);
       }
       // console.log(changes);
-      commit = changes.commit();
-      blocks = this.blocksFromCommit(commit);
-      // console.groupEnd();
+      if(evaluation.waitingCount === 0) {
+        let commit = changes.commit();
+        blocks = this.blocksFromCommit(commit);
+        this._fixpointRound(evaluation, blocks);
+      }
+    } else {
+      if(changes.round >= MAX_ROUNDS) {
+        this.error("Fixpoint Error", "Evaluation failed to fixpoint");
+      }
+      perf.fixpoint(evaluation.start);
+      // console.log("TOTAL ROUNDS", changes.round, perf.time(start));
+      // console.log(changes);
+      for(let database of this.databases) {
+        database.onFixpoint(this, changes);
+      }
+      if(evaluation.callback) {
+        evaluation.callback(changes);
+      }
+      this.currentEvaluation = undefined;
     }
-    if(changes.round >= MAX_ROUNDS) {
-      this.error("Fixpoint Error", "Evaluation failed to fixpoint");
+  }
+
+  onRemoteChanges(info) {
+    let evaluation = this.currentEvaluation;
+    let {blockId} = info;
+    if(evaluation.waitingFor[blockId]) {
+      evaluation.changes.mergeRound(info.changes);
+      evaluation.waitingCount--;
+      if(evaluation.waitingCount === 0) {
+        let commit = evaluation.changes.commit();
+        let blocks = this.blocksFromCommit(commit);
+        this._fixpointRound(evaluation, blocks);
+      }
+      evaluation.waitingFor[blockId] = false;
+    } else {
+      throw new Error("Got a remote block execution for a block we're not waiting for");
     }
-    perf.fixpoint(start);
-    // console.log("TOTAL ROUNDS", changes.round, perf.time(start));
-    // console.log(changes);
-    for(let database of this.databases) {
-      database.onFixpoint(this, changes);
-    }
-    if(callback) {
-      callback(changes);
-    }
+  }
+
+  fixpoint(changes = new Changes(this.multiIndex), blocks = this.getAllBlocks(), callback?: EvaluationCallback) {
+    let start = this.perf.time() as number;
+    this.currentEvaluation = {type: QueuedType.changes, changes, start, callback};
+    changes.changed = true;
+    this._fixpointRound(this.currentEvaluation, blocks);
   }
 
   save() {

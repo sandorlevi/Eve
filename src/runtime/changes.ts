@@ -109,6 +109,24 @@ export class ChangesIndex {
     }
     return key;
   }
+
+  serialize() {
+    return this;
+  }
+
+  merge(index) {
+    let {info, positions} = index;
+    for(let key of Object.keys(positions)) {
+      let pos = positions[key];
+      let e = info[pos + 1];
+      let a = info[pos + 2];
+      let v = info[pos + 3];
+      let node = info[pos + 4];
+      let scope = info[pos + 5];
+      if(info[pos] === ChangeType.ADDED) this.store(scope,e,a,v,node,key);
+      else if(info[pos] === ChangeType.REMOVED) this.unstore(scope,e,a,v,node,key);
+    }
+  }
 }
 
 //---------------------------------------------------------------------
@@ -119,7 +137,7 @@ export class Changes {
   round: number;
   changed: boolean;
   index: MultiIndex;
-  changes: any[];
+  changes: ChangesIndex[];
   finalChanges: ChangesIndex;
   capturedChanges: any;
 
@@ -216,6 +234,14 @@ export class Changes {
       }
     }
     return committed;
+  }
+
+  serializeRound() {
+    return this.changes[this.round].serialize();
+  }
+
+  mergeRound(changes) {
+    this.changes[this.round].merge(changes);
   }
 
   nextRound() {
