@@ -186,7 +186,7 @@ export class Change {
 }
 
 /** A changeset is a list of changes, intended to occur in a single transaction. */
-type ChangeSet = Change[];
+export type ChangeSet = Change[];
 
 //------------------------------------------------------------------------
 // Constraints
@@ -1133,7 +1133,7 @@ type RawEAVN = [RawValue, RawValue, RawValue, RawValue];
 type RawEAVNC = [RawValue, RawValue, RawValue, RawValue, number];
 
 let _currentTransaction = 0;
-function createChangeSet(...eavns:(RawEAVN|RawEAVNC)[]) {
+export function createChangeSet(...eavns:(RawEAVN|RawEAVNC)[]) {
   let changes:ChangeSet = [];
   for(let [e, a, v, n, c = 1] of eavns as RawEAVNC[]) {
     changes.push(Change.fromValues(e, a, v, n, _currentTransaction, 0, c));
@@ -1241,10 +1241,12 @@ export function doIt() {
   console.log("TOTAL ALLOCS", ALLOCATION_COUNT);
 }
 
-for(let ix = 0; ix < 1; ix++) {
-  doIt();
-}
+// If we're running in Node and were run directly.
+if(typeof require !== "undefined" && require.main === module) {
+  for(let ix = 0; ix < 1; ix++) {
+    doIt();
+  }
 
-if(typeof window === "object") {
+} else if(typeof window === "object") {
   (window as any)["doit"] = doIt as any;
 }
