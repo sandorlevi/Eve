@@ -236,5 +236,62 @@ test("transitive closure", (assert) => {
     [4, "path", 1, 5]
   ]);
 
+  // Kick the legs out from under the cycle.
+
+  verify(assert, prog, [
+    [4, "edge", 1, 0, -1]
+  ], [
+    [4, "path", 1, 1, -1],
+
+    [4, "path", 2, 2, -1],
+    [3, "path", 1, 2, -1],
+    [2, "path", 1, 2, -1],
+    [1, "path", 1, 2, -1],
+
+    [4, "path", 3, 3, -1],
+    [3, "path", 2, 3, -1],
+    [2, "path", 2, 3, -1],
+    [1, "path", 2, 3, -1],
+
+    [4, "path", 4,  4, -1],
+
+    [4, "path", 1,  5, -1],
+  ]);
+
+
+  assert.end();
+});
+
+test("removal", (assert) => {
+
+  // -----------------------------------------------------
+  // program
+  // -----------------------------------------------------
+
+  let prog = new Program("test");
+  prog.block("simple block", (find:any, record:any, lib:any) => {
+    find({foo: "bar"});
+    return [
+      record({zomg: "baz"})
+    ]
+  });
+
+  // -----------------------------------------------------
+  // verification
+  // -----------------------------------------------------
+
+  // trust, but
+  verify(assert, prog, [
+    [1, "foo", "bar"]
+  ], [
+    [2, "zomg", "baz", 1]
+  ]);
+
+  verify(assert, prog, [
+    [1, "foo", "bar", 0, -1]
+  ], [
+    [2, "zomg", "baz", 1, -1]
+  ], 1);
+
   assert.end();
 });
