@@ -1120,6 +1120,9 @@ export class InsertNode implements Node {
     // @FIXME: This is pretty wasteful to copy one by one here.
     results!.push(prefix);
 
+    // @NOTE: This won't work once other guys like not can change the multiplicity of our results.
+    let cardinality:Multiplicity = input.count;
+
     if(e === undefined || a === undefined || v === undefined || n === undefined) {
       return false;
     }
@@ -1134,7 +1137,8 @@ export class InsertNode implements Node {
     GlobalInterner.reference(a!);
     GlobalInterner.reference(v!);
     GlobalInterner.reference(n!);
-    let change = new Change(e!, a!, v!, n!, transaction, round + 1, 1);
+
+    let change = new Change(e!, a!, v!, n!, transaction, round + 1, cardinality);
     changes.push(change);
 
     return true;
@@ -1197,7 +1201,11 @@ export class Transaction {
       this.round = change.round;
       // console.log("  Round:", this.round);
 
-      if(!index.check(change.e, change.a, change.v, IGNORE_REG, transaction, change.round)) {
+      let currentCount = index.checkMultiplicity(change.e, change.a, change.v, IGNORE_REG, transaction, change.round);
+      let delta = change.count;
+      if(delta &&
+         ((currentCount <= 0 && currentCount + delta >= 0) ||
+          (currentCount >= 0 && currentCount + delta <= 0))) {
         for(let block of this.blocks) {
           block.exec(index, change, transaction, this.round, changes);
         }
