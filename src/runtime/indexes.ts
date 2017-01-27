@@ -1,4 +1,3 @@
-
 import {Proposal, Change, ResolvedValue, createArray, createHash, IGNORE_REG, ID, EAVN, EAVNField, Register, Constraint, ALLOCATION_COUNT} from "./runtime";
 
 //------------------------------------------------------------------------
@@ -33,6 +32,7 @@ export interface Index {
   resolveProposal(proposal:Proposal):any[][];
   get(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):EAVN[];
   check(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):boolean;
+  checkMultiplicity(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):number;
 }
 
 export class ListIndex implements Index {
@@ -77,6 +77,11 @@ export class ListIndex implements Index {
   }
 
   check(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):boolean {
+    return this.checkMultiplicity(e, a, v, n, transaction, round) > 0;
+  }
+
+  checkMultiplicity(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):number {
+    let count = 0;
     for(let change of this.changes) {
       if((e === undefined || e === IGNORE_REG || e === change.e) &&
          (a === undefined || a === IGNORE_REG || a === change.a) &&
@@ -84,10 +89,10 @@ export class ListIndex implements Index {
          (n === undefined || n === IGNORE_REG || n === change.n) &&
          (change.transaction <= transaction) &&
          (change.round <= round)) {
-        return true;
+        count += change.count;
       }
     }
-    return false;
+    return count;
   }
 
   get(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):EAVN[] {
@@ -202,52 +207,54 @@ export class HashIndex implements Index {
   // This function checks that there is at least one value in the index that matches the
   // given pattern. If a level is free, we have to run through the potential values
   // until we come across one that could match or we run out of values to check.
-  walkCheck(index:any, a:ResolvedValue, b:ResolvedValue, c:ResolvedValue, n:ResolvedValue, transaction:number, round:number):boolean {
+  walkCheck(index:any, a:ResolvedValue, b:ResolvedValue, c:ResolvedValue, n:ResolvedValue, transaction:number, round:number):number {
     let bIx = index[a as ID];
-    if(!bIx) return false;
+    if(!bIx) return 0;
     if(isResolved(b)) {
       let cIx = bIx[b];
-      if(!cIx) return false;
+      if(!cIx) return 0;
       if(isResolved(c)) {
         let ntrcArray = cIx[c];
-        return sumTimes(ntrcArray, transaction, round) > 0;
+        return sumTimes(ntrcArray, transaction, round);
       } else {
+        let count = 0;
         for(let key of Object.keys(cIx)) {
           let ntrcArray = cIx[key];
-          if(sumTimes(ntrcArray, transaction, round) > 0) {
-            return true;
-          }
+          count += sumTimes(ntrcArray, transaction, round);
         }
-        return false;
+        return count;
       }
     } else {
       for(let key of Object.keys(bIx)) {
         let cIx = bIx[key];
-        if(!cIx) return false;
+        if(!cIx) return 0;
         if(isResolved(c)) {
           let ntrcArray = cIx[c];
-          return sumTimes(ntrcArray, transaction, round) > 0;
+          return sumTimes(ntrcArray, transaction, round);
         } else {
+          let count = 0;
           for(let key of Object.keys(cIx)) {
             let ntrcArray = cIx[key];
-            if(sumTimes(ntrcArray, transaction, round) > 0) {
-              return true;
-            }
+            count += sumTimes(ntrcArray, transaction, round);
           }
-          return false;
+          return count;
         }
       }
     }
-    return false;
+    return 0;
   }
 
   check(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):boolean {
+    return this.checkMultiplicity(e, a, v, n, transaction, round) > 0;
+  }
+
+  checkMultiplicity(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):number {
     if(isResolved(e)) {
       return this.walkCheck(this.eavIndex, e, a, v, n, transaction, round);
     } else if(isResolved(a)) {
       return this.walkCheck(this.aveIndex, a, v, e, n, transaction, round);
     }
-    return true;
+    return 0;
   }
 
   get(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):EAVN[] {
@@ -276,6 +283,10 @@ class MatrixIndex implements Index {
 
   check(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):boolean {
     return false;
+  }
+
+  checkMultiplicity(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):number {
+    throw new Error("@TODO: Implement me!");
   }
 
   get(e:ResolvedValue, a:ResolvedValue, v:ResolvedValue, n:ResolvedValue, transaction:number, round:number):EAVN[] {
