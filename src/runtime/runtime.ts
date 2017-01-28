@@ -869,7 +869,8 @@ export interface Node {
    * returning a set of valid prefixes to continue the query as
    * results.
    */
-  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results?:ID[][], changes?:Change[]):boolean;
+  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results:ID[][], changes:Change[], times:boolean[]):boolean;
+
 }
 
 /**
@@ -912,7 +913,7 @@ export class JoinNode implements Node {
   registerArrays:Register[][];
   proposedResultsArrays:ID[][];
   emptyProposal:Proposal = {cardinality: Infinity, forFields: [], forRegisters: [], skip: true, proposer: {} as Constraint};
-  inputState = {constraintIx: 0, state: ApplyInputState.none};
+  inputTrace:{[value:number]: boolean[]}[];
   protected affectedConstraints:Constraint[] = createArray();
 
   constructor(public constraints:Constraint[]) {
@@ -930,6 +931,11 @@ export class JoinNode implements Node {
     this.registerArrays = registers;
     this.registerLength = registers.length;
     this.proposedResultsArrays = proposedResultsArrays;
+    let inputTrace = [];
+    for(let register of registers) {
+      inputTrace.push({});
+    }
+    this.inputTrace = inputTrace;
   }
 
   findAffectedConstraints(input:Change, prefix:ID[]) {
@@ -1065,7 +1071,7 @@ export class JoinNode implements Node {
     return results;
   }
 
-  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results:ID[][] = createArray("joinNodeExec")):boolean {
+  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results:ID[][] = createArray("joinNodeExec"), changes:Change[], times:boolean[]):boolean {
     let didSomething = false;
     let affectedConstraints = this.findAffectedConstraints(input, prefix);
 
@@ -1088,6 +1094,23 @@ export class JoinNode implements Node {
           let valid = constraint.applyInput(input, prefix);
           // If any member of the input constraints fails, this whole combination is doomed.
           if(valid === ApplyInputState.fail) break;
+          if(valid === ApplyInputState.pass) {
+            for(let reg of constraint.getRegisters()) {
+              let {offset} = reg;
+              let trace = this.inputTrace[offset][prefix[offset]];
+              if(!trace) {
+                trace = this.inputTrace[offset][prefix[offset]] = [];
+              } else {
+                for(let futureRound = round + 1; futureRound < trace.length; futureRound++) {
+                  if(trace[futureRound] === true) {
+                    times[futureRound] = true;
+                  }
+                }
+
+              }
+              trace[round] = true;
+            }
+          }
 
           //console.log("    " + printConstraint(constraint));
         } else {
@@ -1114,7 +1137,7 @@ export class InsertNode implements Node {
 
   resolve = Scan.prototype.resolve;
 
-  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results:ID[][], changes:Change[]):boolean {
+  exec(index:Index, input:Change, prefix:ID[], transaction:number, round:number, results:ID[][], changes:Change[], times:boolean[]):boolean {
     let {e,a,v,n} = this.resolve(prefix);
 
     // @FIXME: This is pretty wasteful to copy one by one here.
@@ -1140,6 +1163,7 @@ export class InsertNode implements Node {
 
     let change = new Change(e!, a!, v!, n!, transaction, round + 1, cardinality);
     changes.push(change);
+    console.log("       ->", change.toString());
 
     return true;
   }
@@ -1157,19 +1181,20 @@ export class Block {
   initial:ID[] = createArray();
   protected nextResults:ID[][] = createArray();
 
-  exec(index:Index, input:Change, transaction:number, round:number, changes:Change[]):boolean {
+  exec(index:Index, input:Change, transaction:number, round:number, changes:Change[]):boolean[] {
     let blockState = ApplyInputState.none;
     this.results.length = 0;
     this.initial.length = 0;
     this.results.push(this.initial);
     this.nextResults.length = 0;
+    let times:boolean[] = [];
     // We populate the prefix with values from the input change so we only derive the
     // results affected by it.
     for(let node of this.nodes) {
       for(let prefix of this.results) {
-        let valid = node.exec(index, input, prefix, transaction, round, this.nextResults, changes);
+        let valid = node.exec(index, input, prefix, transaction, round, this.nextResults, changes, times);
         if(!valid) {
-          return false;
+          return times;
         }
       }
       let tmp = this.results;
@@ -1179,7 +1204,7 @@ export class Block {
       this.nextResults.length = 0;
     }
 
-    return true;
+    return times;
   }
 }
 
@@ -1192,28 +1217,65 @@ export class Transaction {
   round = 0;
   constructor(public transaction:number, public blocks:Block[], public changes:Change[]) {}
 
+  handleChange(index:Index, change:Change, transaction:number, changes:Change[], reruns: Change[][], isRerun:boolean) {
+    console.log(change.toString());
+    console.log("   isRerun:", isRerun);
+    let currentCount = index.checkMultiplicity(change.e, change.a, change.v, IGNORE_REG, transaction, change.round);
+    let delta = change.count;
+    if(delta &&
+       ((currentCount <= 0 && currentCount + delta >= 0) ||
+        (currentCount >= 0 && currentCount + delta <= 0))) {
+      for(let block of this.blocks) {
+        console.log("   ", block.name)
+        let times = block.exec(index, change, transaction, this.round, changes);
+        console.log("        ", times.map((x, ix) => { return x ? ix : 0; }).join(", "));
+        let timeIx = 0;
+        for(let time of times) {
+          if(time) {
+            let set = reruns[timeIx] = reruns[timeIx] || [];
+            if(set.indexOf(change) === -1) {
+              set.push(change);
+            }
+          }
+          timeIx++;
+        }
+      }
+    }
+
+    if(!isRerun) index.insert(change);
+  }
+
   exec(index:Index) {
+    let reruns:Change[][] = [];
     let {changes, transaction, round} = this;
     let changeIx = 0;
     // console.log("Blocks: " + this.blocks.map((b) => b.name).join(", "));
     while(changeIx < changes.length) {
       let change = changes[changeIx];
-      this.round = change.round;
-      // console.log("  Round:", this.round);
-
-      let currentCount = index.checkMultiplicity(change.e, change.a, change.v, IGNORE_REG, transaction, change.round);
-      let delta = change.count;
-      if(delta &&
-         ((currentCount <= 0 && currentCount + delta >= 0) ||
-          (currentCount >= 0 && currentCount + delta <= 0))) {
-        for(let block of this.blocks) {
-          block.exec(index, change, transaction, this.round, changes);
+      while(this.round < change.round) {
+        this.round++;
+        console.log("*************", this.round,"**************")
+        let toRun = reruns[this.round];
+        if(!toRun) continue;
+        for(let rerun of toRun) {
+          this.handleChange(index, rerun, transaction, changes, reruns, true);
         }
       }
+      this.round = change.round;
+      // console.log("  Round:", this.round);
+      this.handleChange(index, change, transaction, changes, reruns, false);
 
-      index.insert(change);
       // console.log("    -> " + change);
       changeIx++;
+    }
+
+    while(this.round < reruns.length) {
+      this.round++;
+      let toRun = reruns[this.round];
+      if(!toRun) continue;
+      for(let rerun of toRun) {
+        this.handleChange(index, rerun, transaction, changes, reruns, true);
+      }
     }
 
     // Once the transaction is effectively done, we need to clean up after ourselves. We

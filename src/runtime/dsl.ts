@@ -506,7 +506,7 @@ export class Program {
   input(changes:runtime.Change[]) {
     let trans = new runtime.Transaction(changes[0].transaction, this.runtimeBlocks, changes);
     trans.exec(this.index);
-    // console.log(trans.changes.map((change, ix) => `    <- ${change}`).join("\n"));
+    console.log(trans.changes.map((change, ix) => `    <- ${change}`).join("\n"));
     return trans;
   }
 }
